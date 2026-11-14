@@ -1,0 +1,153 @@
+import Foundation
+
+/// 演示数据生成器。
+///
+/// 台式机（如 Mac mini）没有电池，真实数据里看不到“电池 vs 电源”的拆分。
+/// 演示模式会模拟一台笔记本在 110 秒周期内的典型场景：
+///   电池空闲 → 电池满载 → 插电高负载 → 充电 → 充满外接
+/// 这样在无电池机器上也能预览完整的 UI 与图表。
+public struct DemoGenerator {
+    private var rng: SeededRandom
+    private var tick: Int = 0
+    public let interval: TimeInterval
+
+    public init(seed: UInt64 = 0x5EED_1234, interval: TimeInterval = 1.0, startTick: Int = 0) {
+        self.rng = SeededRandom(seed: seed)
+        self.interval = interval
+        self.tick = startTick
+    }
+
+    /// 生成下一帧演示读数
+    public mutating func next(now: Date = Date()) -> PowerReading {
+        defer { tick += 1 }
+        let t = Double(tick) * interval
+        let cycle = t.truncatingRemainder(dividingBy: 110.0)
+
+        // 阶段参数：phase → (系统负载, 是否接电, 是否充电, 电池电量)
+        let phase: (load: Double, onAC: Bool, charging: Bool, soc: Double)
+        switch cycle {
+        case ..<22:
+            phase = (7.2, false, false, 62)
+        case ..<42:
+            phase = (28.5, false, false, 60)
+        case ..<58:
+            phase = (34.0, true, true, 58)
+        case ..<82:
+            phase = (15.0, true, true, 66)
+        case ..<96:
+            phase = (9.5, true, false, 84)
+        default:
+            phase = (7.8, true, false, 85)
+        }
+
+        let noise = rng.nextDouble(in: -0.8...0.8)
+        let ripple = sin(t * 0.9) * 0.6
+        let load = max(2.0, phase.load + noise + ripple)
+
+        // 适配器：65W 充电器
+        var adapterIn: Double
+        var batteryPower: Double
+        var charging = phase.charging
+
+        if phase.onAC {
+            if phase.charging {
+                let chargeRate = 18.0 + sin(t * 0.4) * 3.0
+                adapterIn = load + chargeRate
+                batteryPower = chargeRate
+            } else {
+                adapterIn = load + 0.2
+                batteryPower = 0
+            }
+            // 电池接近充满时降低充电功率
+            if phase.soc > 92 { batteryPower *= 0.3 }
+        } else {
+            adapterIn = 0
+            batteryPower = -load
+            charging = false
+        }
+
+        let system = load
+        let adapterToLoad = phase.onAC ? min(adapterIn, load) : 0
+        let batteryToLoad = max(0, load - adapterToLoad)
+        let chargeW = max(0, adapterIn - load)
+        let loss = adapterIn > 0 ? min(2.2, adapterIn * 0.055) : 0
+
+        // 电量缓慢变化
+        let soc = min(100, max(3, phase.soc + sin(t * 0.05) * 0.8))
+
+        // 分项功率（模拟笔记本：内置屏背光 + USB-C 对外供电）
+        let display = min(max(1.2, load * 0.22), 4.6 + sin(t * 0.31) * 0.5)
+        let port = min(max(0.4, load * 0.10), 2.2 + sin(t * 0.17) * 0.9)
+        let safeDisplay = min(display, max(0, load - 1.2))
+        let safePort = min(port, max(0, load - safeDisplay - 0.6))
+        // 风扇：随负载线性上升，叠加一点波动（模拟 M 系列机型）
+        let fan = min(4900, max(1700, 1700 + load * 62 + sin(t * 0.7) * 25))
+
+        return PowerReading(
+            timestamp: now,
+            systemPowerW: system,
+            adapterInputW: adapterIn > 0 ? adapterIn : nil,
+            batteryPowerW: batteryPower,
+            adapterRatedW: 65,
+            adapterName: "65W USB-C 电源适配器",
+            wallPowerW: adapterIn > 0 ? adapterIn + loss : nil,
+            adapterLossW: loss,
+            adapterToLoadW: adapterToLoad,
+            batteryToLoadW: batteryToLoad,
+            chargeW: chargeW,
+            hasBattery: true,
+            onAC: phase.onAC,
+            isCharging: charging && chargeW > 0.1,
+            isCharged: phase.onAC && !charging && soc > 80,
+            batteryPercent: soc,
+            timeRemainingMinutes: phase.onAC ? nil : (phase.load > 20 ? 95 : 380),
+            displayPowerW: safeDisplay,
+            portPowerW: safePort,
+            fanRPM: fan,
+            fanMinRPM: 1700,
+            fanMaxRPM: 4900,
+            source: .synthetic
+        )
+    }
+
+    /// 预生成一段历史，供离屏渲染预览图使用。
+    /// - Parameter endPhase: 让最后一个样本落在周期内的指定秒数（用于渲染“充电中/放电中”等固定状态）。
+    public static func history(seconds: Int, seed: UInt64 = 0x5EED_1234,
+                               endingAt now: Date = Date(),
+                               endPhase: Double? = nil) -> [PowerReading] {
+        let cycle = 110.0
+        var lastTick = (seconds - 1) % 110
+        if let endPhase {
+            lastTick = Int(endPhase.truncatingRemainder(dividingBy: cycle))
+        }
+        let startTick = ((lastTick - (seconds - 1)) % Int(cycle) + Int(cycle)) % Int(cycle)
+        var generator = DemoGenerator(seed: seed, startTick: startTick)
+        var result: [PowerReading] = []
+        for i in 0..<seconds {
+            let time = now.addingTimeInterval(Double(i - seconds + 1))
+            result.append(generator.next(now: time))
+        }
+        return result
+    }
+}
+
+/// 可复现的伪随机数（避免每次预览图长得不一样）
+public struct SeededRandom {
+    private var state: UInt64
+
+    public init(seed: UInt64) {
+        state = seed == 0 ? 0x9E37_79B9_7F4A_7C15 : seed
+    }
+
+    public mutating func next() -> UInt64 {
+        state ^= state << 13
+        state ^= state >> 7
+        state ^= state << 17
+        return state
+    }
+
+    public mutating func nextDouble(in range: ClosedRange<Double>) -> Double {
+        let unit = Double(next() % 1_000_000) / 1_000_000.0
+        return range.lowerBound + unit * (range.upperBound - range.lowerBound)
+    }
+}

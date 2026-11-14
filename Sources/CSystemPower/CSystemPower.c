@@ -1,0 +1,483 @@
+//
+//  CSystemPower.c
+//  WattMeter
+//
+//  实现见 CSystemPower.h 顶部说明。
+//
+
+#include "CSystemPower.h"
+
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/ps/IOPowerSources.h>
+#include <IOKit/ps/IOPSKeys.h>
+#include <mach/mach.h>
+#include <string.h>
+#include <stdlib.h>
+
+/* ------------------------------------------------------------------ */
+/* AppleSMC                                                            */
+/* ------------------------------------------------------------------ */
+
+#define SMC_KERNEL_INDEX   2
+#define SMC_CMD_READ_BYTES 5
+#define SMC_CMD_READ_KEYINFO 9
+#define SMC_KEY_FLT       0x666c7420u /* 'flt ' */
+#define SMC_KEY_FPE2      0x66706532u /* 'fpe2'：无符号 16 位 / 4 */
+#define SMC_KEY_SP78      0x73703738u /* 'sp78'：有符号 16 位 / 256 */
+
+typedef struct {
+    uint8_t  major;
+    uint8_t  minor;
+    uint8_t  build;
+    uint8_t  reserved[1];
+    uint16_t release;
+} SMCVers;
+
+typedef struct {
+    uint16_t version;
+    uint16_t length;
+    uint32_t cpuPLimit;
+    uint32_t gpuPLimit;
+    uint32_t memPLimit;
+} SMCPLimit;
+
+typedef struct {
+    uint32_t dataSize;
+    uint32_t dataType;
+    uint8_t  dataAttributes;
+} SMCKeyInfo;
+
+typedef struct {
+    uint32_t   key;
+    SMCVers    vers;
+    SMCPLimit  pLimitData;
+    SMCKeyInfo keyInfo;
+    uint8_t    result;
+    uint8_t    status;
+    uint8_t    data8;
+    uint32_t   data32;
+    uint8_t    bytes[32];
+} SMCKeyData;
+
+struct SPReader {
+    io_service_t  smcService;
+    io_connect_t  smcConnection;
+    int           smcReady;
+};
+
+static kern_return_t smc_call(io_connect_t conn, SMCKeyData *in, SMCKeyData *out) {
+    size_t outSize = sizeof(SMCKeyData);
+    return IOConnectCallStructMethod(conn, SMC_KERNEL_INDEX,
+                                     in, sizeof(SMCKeyData),
+                                     out, &outSize);
+}
+
+static uint32_t smc_str2key(const char *s) {
+    uint32_t k = 0;
+    for (int i = 0; i < 4; i++) {
+        k = (k << 8) | (uint8_t)s[i];
+    }
+    return k;
+}
+
+/* 读取键的元信息；返回 0 成功 */
+static int smc_key_info(io_connect_t conn, const char *key,
+                        uint32_t *dataType, uint8_t *dataSize) {
+    SMCKeyData in, out;
+    memset(&in, 0, sizeof in);
+    memset(&out, 0, sizeof out);
+    in.key = smc_str2key(key);
+    in.data8 = SMC_CMD_READ_KEYINFO;
+    if (smc_call(conn, &in, &out) != KERN_SUCCESS) return -1;
+    if (out.result != 0) return -2;
+    if (dataType) *dataType = out.keyInfo.dataType;
+    if (dataSize) *dataSize = out.keyInfo.dataSize;
+    return 0;
+}
+
+/* 读取键的原始字节；返回 0 成功 */
+static int smc_read_raw(io_connect_t conn, const char *key,
+                        uint8_t *bytes, uint8_t size) {
+    SMCKeyData in, out;
+    memset(&in, 0, sizeof in);
+    memset(&out, 0, sizeof out);
+    in.key = smc_str2key(key);
+    in.keyInfo.dataSize = size;
+    in.data8 = SMC_CMD_READ_BYTES;
+    if (smc_call(conn, &in, &out) != KERN_SUCCESS) return -1;
+    if (out.result != 0) return -2;
+    memcpy(bytes, out.bytes, size);
+    return 0;
+}
+
+/* 读取 flt 键，单位 W。返回 0 成功 */
+static int smc_read_flt(io_connect_t conn, const char *key, double *value) {
+    uint32_t type = 0;
+    uint8_t  size = 0;
+    if (smc_key_info(conn, key, &type, &size) != 0) return -1;
+    if (type != SMC_KEY_FLT || size != 4) return -2;
+    uint8_t raw[4] = {0, 0, 0, 0};
+    if (smc_read_raw(conn, key, raw, 4) != 0) return -3;
+    float f = 0;
+    memcpy(&f, raw, sizeof f);
+    if (!(f == f) || f < -1000.0f || f > 1000.0f) return -4; /* NaN / 明显异常 */
+    *value = (double)f;
+    return 0;
+}
+
+/* 通用数值读取：支持 flt / fpe2 / sp78。返回 0 成功。 */
+static int smc_read_number(io_connect_t conn, const char *key, double *value) {
+    uint32_t type = 0;
+    uint8_t  size = 0;
+    if (smc_key_info(conn, key, &type, &size) != 0) return -1;
+    if (size == 0 || size > 32) return -2;
+    uint8_t raw[32] = {0};
+    if (smc_read_raw(conn, key, raw, size) != 0) return -3;
+    if (type == SMC_KEY_FLT && size == 4) {
+        float f = 0;
+        memcpy(&f, raw, sizeof f);
+        *value = (double)f;
+    } else if (type == SMC_KEY_FPE2 && size == 2) {
+        *value = (double)(((uint16_t)raw[0] << 8) | raw[1]) / 4.0;
+    } else if (type == SMC_KEY_SP78 && size == 2) {
+        int16_t v = (int16_t)(((uint16_t)raw[0] << 8) | raw[1]);
+        *value = (double)v / 256.0;
+    } else {
+        return -4;
+    }
+    if (!(*value == *value)) return -5; /* NaN */
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* CoreFoundation 辅助                                                  */
+/* ------------------------------------------------------------------ */
+
+static int cf_bool(CFDictionaryRef d, CFStringRef k, int fallback) {
+    if (!d) return fallback;
+    CFTypeRef v = CFDictionaryGetValue(d, k);
+    if (v && CFGetTypeID(v) == CFBooleanGetTypeID()) {
+        return CFBooleanGetValue((CFBooleanRef)v) ? 1 : 0;
+    }
+    return fallback;
+}
+
+static double cf_double(CFDictionaryRef d, CFStringRef k, double fallback) {
+    if (!d) return fallback;
+    CFTypeRef v = CFDictionaryGetValue(d, k);
+    if (v && CFGetTypeID(v) == CFNumberGetTypeID()) {
+        double x = fallback;
+        if (CFNumberGetValue((CFNumberRef)v, kCFNumberDoubleType, &x)) return x;
+    }
+    return fallback;
+}
+
+static CFDictionaryRef cf_dict(CFDictionaryRef d, CFStringRef k) {
+    if (!d) return NULL;
+    CFTypeRef v = CFDictionaryGetValue(d, k);
+    if (v && CFGetTypeID(v) == CFDictionaryGetTypeID()) return (CFDictionaryRef)v;
+    return NULL;
+}
+
+static void cf_string(CFDictionaryRef d, CFStringRef k, char *buf, size_t len) {
+    if (!buf || len == 0) return;
+    buf[0] = '\0';
+    if (!d) return;
+    CFTypeRef v = CFDictionaryGetValue(d, k);
+    if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
+        CFStringGetCString((CFStringRef)v, buf, (CFIndex)len, kCFStringEncodingUTF8);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* AppleSmartBattery (IORegistry)                                      */
+/* ------------------------------------------------------------------ */
+
+static void read_smart_battery(SPReading *r) {
+    io_service_t svc = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                   IOServiceMatching("AppleSmartBattery"));
+    if (!svc) return;
+
+    CFMutableDictionaryRef props = NULL;
+    if (IORegistryEntryCreateCFProperties(svc, &props, kCFAllocatorDefault, 0) != KERN_SUCCESS) {
+        IOObjectRelease(svc);
+        return;
+    }
+    IOObjectRelease(svc);
+    if (!props) return;
+
+    r->batteryInstalled = cf_bool(props, CFSTR("BatteryInstalled"), 0);
+    r->externalConnected = cf_bool(props, CFSTR("ExternalConnected"), 0);
+    r->isCharging = cf_bool(props, CFSTR("IsCharging"), 0);
+    r->isCharged = cf_bool(props, CFSTR("IsCharged"), 0);
+
+    r->batteryVoltage_mV = cf_double(props, CFSTR("Voltage"), 0.0);
+    r->batteryAmperage_mA = cf_double(props, CFSTR("Amperage"), 0.0);
+    if (r->batteryAmperage_mA == 0.0) {
+        /* InstantAmperage 更新更快，但某些机型没有 */
+        r->batteryAmperage_mA = cf_double(props, CFSTR("InstantAmperage"), 0.0);
+    }
+
+    /* 适配器信息 */
+    CFDictionaryRef adapter = cf_dict(props, CFSTR("AdapterDetails"));
+    if (adapter) {
+        double watts = cf_double(adapter, CFSTR("Watts"), 0.0);
+        double volts = cf_double(adapter, CFSTR("Voltage"), 0.0);
+        double amps  = cf_double(adapter, CFSTR("Current"), 0.0);
+        char   name[128];
+        cf_string(adapter, CFSTR("Name"), name, sizeof name);
+        if (watts > 0 || name[0] != '\0') {
+            r->adapterKnown = 1;
+            r->adapterRatedWatts = watts;
+            r->adapterVoltage_mV = volts;
+            r->adapterCurrent_mA = amps;
+            snprintf(r->adapterName, sizeof r->adapterName, "%s", name);
+        }
+    }
+
+    /* 对外供电接口（PowerOutDetails，笔记本 / 带 USB-C 供电的机型） */
+    {
+        CFTypeRef po = CFDictionaryGetValue(props, CFSTR("PowerOutDetails"));
+        if (po && CFGetTypeID(po) == CFArrayGetTypeID() && !r->portTelemetryAvailable) {
+            CFArrayRef arr = (CFArrayRef)po;
+            CFIndex n = CFArrayGetCount(arr);
+            if (n > 0) {
+                r->portTelemetryAvailable = 1;
+                double sum = 0;
+                for (CFIndex i = 0; i < n; i++) {
+                    CFTypeRef item = CFArrayGetValueAtIndex(arr, i);
+                    if (!item || CFGetTypeID(item) != CFDictionaryGetTypeID()) continue;
+                    /* PowerOutDetails.Watts 的单位是 mW，和 AdapterDetails.Watts 不同 */
+                    double watts = cf_double((CFDictionaryRef)item, CFSTR("Watts"), -1);
+                    if (watts > 0 && watts < 240000) sum += watts / 1000.0;
+                }
+                r->portPower_W = sum;
+            }
+        }
+    }
+
+    /* PowerTelemetryData（Apple Silicon；约 20 秒刷新一次） */
+    CFDictionaryRef pt = cf_dict(props, CFSTR("PowerTelemetryData"));
+    if (pt) {
+        double inW  = cf_double(pt, CFSTR("SystemPowerIn"), -1.0);
+        double load = cf_double(pt, CFSTR("SystemLoad"), -1.0);
+        if (inW >= 0 || load >= 0) {
+            r->telemetryAvailable = 1;
+            r->systemPowerIn_mW = inW < 0 ? 0 : inW;
+            r->systemLoad_mW = load < 0 ? 0 : load;
+            r->batteryPower_mW = cf_double(pt, CFSTR("BatteryPower"), 0.0);
+            r->adapterEfficiencyLoss_mW = cf_double(pt, CFSTR("AdapterEfficiencyLoss"), 0.0);
+        }
+    }
+
+    CFRelease(props);
+}
+
+/* ------------------------------------------------------------------ */
+/* IOPS（电池电量 / 状态 / 剩余时间 / 当前供电源）                      */
+/* ------------------------------------------------------------------ */
+
+static void read_iops(SPReading *r) {
+    CFTypeRef info = IOPSCopyPowerSourcesInfo();      /* owned */
+    if (info) {
+        CFArrayRef sources = IOPSCopyPowerSourcesList(info); /* owned */
+        if (sources) {
+            CFIndex n = CFArrayGetCount(sources);
+            for (CFIndex i = 0; i < n; i++) {
+                CFTypeRef ps = CFArrayGetValueAtIndex(sources, i);
+                CFDictionaryRef desc = IOPSGetPowerSourceDescription(info, ps);
+                if (!desc) continue;
+
+                CFStringRef type = (CFStringRef)CFDictionaryGetValue(desc, CFSTR(kIOPSTypeKey));
+                int isBattery = type && CFGetTypeID(type) == CFStringGetTypeID() &&
+                                CFStringCompare(type, CFSTR(kIOPSInternalBatteryType), 0) == kCFCompareEqualTo;
+
+                if (!isBattery) continue;
+
+                r->batteryInstalled = 1;
+
+                CFStringRef state = (CFStringRef)CFDictionaryGetValue(desc, CFSTR(kIOPSPowerSourceStateKey));
+                if (state && CFGetTypeID(state) == CFStringGetTypeID()) {
+                    if (CFStringCompare(state, CFSTR(kIOPSACPowerValue), 0) == kCFCompareEqualTo) {
+                        r->externalConnected = 1;
+                        snprintf(r->powerSourceState, sizeof r->powerSourceState, "%s", "AC Power");
+                    } else if (CFStringCompare(state, CFSTR(kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo) {
+                        r->externalConnected = 0;
+                        snprintf(r->powerSourceState, sizeof r->powerSourceState, "%s", "Battery Power");
+                    }
+                }
+
+                CFBooleanRef charging = (CFBooleanRef)CFDictionaryGetValue(desc, CFSTR(kIOPSIsChargingKey));
+                if (charging && CFGetTypeID(charging) == CFBooleanGetTypeID()) {
+                    r->isCharging = CFBooleanGetValue(charging) ? 1 : 0;
+                }
+                CFBooleanRef charged = (CFBooleanRef)CFDictionaryGetValue(desc, CFSTR(kIOPSIsChargedKey));
+                if (charged && CFGetTypeID(charged) == CFBooleanGetTypeID()) {
+                    r->isCharged = CFBooleanGetValue(charged) ? 1 : 0;
+                }
+
+                double cur = cf_double(desc, CFSTR(kIOPSCurrentCapacityKey), -1.0);
+                double max = cf_double(desc, CFSTR(kIOPSMaxCapacityKey), -1.0);
+                if (cur >= 0 && max > 0) {
+                    r->socPercent = cur / max * 100.0;
+                }
+                break;
+            }
+            CFRelease(sources);
+        }
+        CFRelease(info);
+    }
+
+    /* 供电源类型（兜底） */
+    CFStringRef provider = IOPSGetProvidingPowerSourceType(NULL);
+    if (provider && CFGetTypeID(provider) == CFStringGetTypeID()) {
+        if (CFStringCompare(provider, CFSTR(kIOPSACPowerValue), 0) == kCFCompareEqualTo) {
+            r->externalConnected = 1;
+            if (r->powerSourceState[0] == '\0') {
+                snprintf(r->powerSourceState, sizeof r->powerSourceState, "%s", "AC Power");
+            }
+        } else if (CFStringCompare(provider, CFSTR(kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo) {
+            r->externalConnected = 0;
+            if (r->powerSourceState[0] == '\0') {
+                snprintf(r->powerSourceState, sizeof r->powerSourceState, "%s", "Battery Power");
+            }
+        }
+    }
+
+    /* 剩余时间：IOPSGetTimeRemainingEstimate 返回秒，-1 未知 / -2 不限 */
+    CFTimeInterval remaining = IOPSGetTimeRemainingEstimate();
+    if (remaining > 0) {
+        r->timeRemainingMinutes = remaining / 60.0;
+    } else {
+        r->timeRemainingMinutes = remaining; /* -1 / -2 原样保留 */
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* 对外 API                                                            */
+/* ------------------------------------------------------------------ */
+
+SPReader *sp_reader_create(void) {
+    SPReader *reader = (SPReader *)calloc(1, sizeof(SPReader));
+    if (!reader) return NULL;
+
+    io_service_t svc = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                   IOServiceMatching("AppleSMC"));
+    if (svc) {
+        io_connect_t conn = 0;
+        if (IOServiceOpen(svc, mach_task_self(), 0, &conn) == KERN_SUCCESS) {
+            reader->smcService = svc;
+            reader->smcConnection = conn;
+            reader->smcReady = 1;
+        } else {
+            IOObjectRelease(svc);
+        }
+    }
+    return reader;
+}
+
+void sp_reader_destroy(SPReader *reader) {
+    if (!reader) return;
+    if (reader->smcReady) {
+        IOServiceClose(reader->smcConnection);
+        IOObjectRelease(reader->smcService);
+    }
+    free(reader);
+}
+
+int32_t sp_reader_read_smc_float(SPReader *reader, const char *key, double *out) {
+    if (!reader || !reader->smcReady || !key || !out) return -1;
+    return smc_read_flt(reader->smcConnection, key, out) == 0 ? 0 : -1;
+}
+
+int32_t sp_reader_smc_key_exists(SPReader *reader, const char *key) {
+    if (!reader || !reader->smcReady || !key) return 0;
+    uint32_t type = 0;
+    if (smc_key_info(reader->smcConnection, key, &type, NULL) != 0) return 0;
+    return type == SMC_KEY_FLT ? 1 : 0;
+}
+
+int32_t sp_reader_read(SPReader *reader, SPReading *out) {
+    if (!reader || !out) return -1;
+
+    memset(out, 0, sizeof(SPReading));
+    out->socPercent = -1.0;
+    out->timeRemainingMinutes = -1.0;
+    snprintf(out->powerSourceState, sizeof out->powerSourceState, "%s", "Unknown");
+
+    /* SMC */
+    if (reader->smcReady) {
+        out->smcAvailable = 1;
+        double v = 0;
+
+        if (smc_read_flt(reader->smcConnection, "PSTR", &v) == 0) {
+            out->smcHasSystemPower = 1;
+            out->smcSystemPower_W = v;
+        }
+        if (smc_read_flt(reader->smcConnection, "PDTR", &v) == 0) {
+            out->smcHasAdapterPower = 1;
+            out->smcAdapterPower_W = v;
+        }
+        if (smc_read_flt(reader->smcConnection, "PD0R", &v) == 0) {
+            out->smcHasDesktopInputPower = 1;
+            out->smcDesktopInputPower_W = v;
+        }
+
+        /* USB-C 对外供电通道：D1..D4 的电压 × 电流（PowerLens 同款做法） */
+        double railSum = 0;
+        int    railsAnswered = 0;
+        for (int ch = 1; ch <= 4; ch++) {
+            char vkey[8], akey[8];
+            snprintf(vkey, sizeof vkey, "D%dJV", ch);
+            snprintf(akey, sizeof akey, "D%dJI", ch);
+            double volts = 0, amps = 0;
+            if (smc_read_flt(reader->smcConnection, vkey, &volts) == 0
+                && smc_read_flt(reader->smcConnection, akey, &amps) == 0) {
+                railsAnswered = 1;
+                if (volts >= 0 && volts <= 60 && amps >= 0 && amps <= 12) {
+                    double w = volts * amps;
+                    if (w <= 150) railSum += w;
+                }
+            }
+        }
+        if (railsAnswered) {
+            out->portTelemetryAvailable = 1;
+            out->portPower_W = railSum;
+        }
+
+        /* 风扇转速：F0Ac = 实际转速，F0Mn / F0Mx = 最小 / 最大 */
+        {
+            double rpm = 0;
+            if (smc_read_number(reader->smcConnection, "F0Ac", &rpm) == 0
+                && rpm >= 0 && rpm <= 20000) {
+                out->fanAvailable = 1;
+                out->fanRPM = rpm;
+                double mn = 0, mx = 0;
+                if (smc_read_number(reader->smcConnection, "F0Mn", &mn) == 0 && mn >= 0) {
+                    out->fanMinRPM = mn;
+                }
+                if (smc_read_number(reader->smcConnection, "F0Mx", &mx) == 0 && mx >= 0) {
+                    out->fanMaxRPM = mx;
+                }
+            }
+        }
+
+        /* 内置屏幕背光：不同机型用不同键 */
+        const char *displayKeys[] = {"PDBR", "PBwo", "PBLR"};
+        for (int i = 0; i < 3; i++) {
+            if (smc_read_flt(reader->smcConnection, displayKeys[i], &v) == 0
+                && v >= 0 && v < 100) {
+                out->displayAvailable = 1;
+                out->displayPower_W = v;
+                break;
+            }
+        }
+    }
+
+    /* 平台数据 */
+    read_smart_battery(out);
+    read_iops(out);
+
+    return 0;
+}

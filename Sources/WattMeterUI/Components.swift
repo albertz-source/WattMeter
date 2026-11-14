@@ -1,0 +1,411 @@
+import SwiftUI
+import AppKit
+import WattMeterCore
+
+// MARK: - 渲染模式（离屏预览时替换毛玻璃背景）
+
+public enum RenderSettings {
+    /// 由 wattmeter-snapshot 在渲染前置为 true。
+    /// NSVisualEffectView（毛玻璃）无法被 ImageRenderer 导出，预览时改用纯色底。
+    public static var isPreviewing = false
+}
+
+// MARK: - 配色（参考 PowerLens 的深色强调色系）
+
+public enum Palette {
+    /// 主色：电源 / 正向数值
+    public static let mint = Color(red: 0.43, green: 0.88, blue: 0.76)
+    /// 电池放电 / 充电
+    public static let amber = Color(red: 0.96, green: 0.76, blue: 0.45)
+    /// 系统负载
+    public static let blue = Color(red: 0.49, green: 0.69, blue: 0.98)
+    /// 适配器 / 端口 / 次要强调
+    public static let purple = Color(red: 0.73, green: 0.61, blue: 0.96)
+    /// 充电绿
+    public static let charge = Color(red: 0.43, green: 0.88, blue: 0.76)
+
+    // 语义别名（图表和旧代码使用）
+    public static let adapter = mint
+    public static let battery = amber
+    public static let muted = Color.white.opacity(0.45)
+}
+
+// MARK: - 深色毛玻璃背景
+
+/// 采样窗口背后的系统材质；「降低透明度」等辅助功能设置仍由系统尊重。
+public struct FrostedPanelBackground: NSViewRepresentable {
+    public init() {}
+
+    public func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.appearance = NSAppearance(named: .darkAqua)
+        return view
+    }
+
+    public func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+/// 面板统一背景：毛玻璃（预览时纯色）+ 深色渐变叠加
+public struct PanelBackground: View {
+    public init() {}
+
+    public var body: some View {
+        ZStack {
+            if RenderSettings.isPreviewing {
+                Color(red: 0.09, green: 0.11, blue: 0.13)
+            } else {
+                FrostedPanelBackground()
+            }
+            LinearGradient(
+                colors: [
+                    Color(red: 0.115, green: 0.13, blue: 0.15).opacity(0.22),
+                    Color(red: 0.075, green: 0.085, blue: 0.10).opacity(0.35),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - 卡片
+
+public struct Card<Content: View>: View {
+    let title: String?
+    let subtitle: String?
+    let content: Content
+
+    public init(title: String? = nil, subtitle: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content()
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if title != nil || subtitle != nil {
+                HStack(alignment: .firstTextBaseline) {
+                    if let title {
+                        Text(title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                    Spacer()
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+            }
+            content
+        }
+        .padding(12)
+        .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.055), lineWidth: 0.7)
+        )
+    }
+}
+
+// MARK: - 明细行（图标 + 标题/说明 + 右对齐读数）
+
+public struct PowerRow: View {
+    let icon: String
+    let title: String
+    let caption: String
+    let value: String
+    var unit: String?
+    let tint: Color
+
+    public init(icon: String, title: String, caption: String,
+                value: String, unit: String? = nil, tint: Color) {
+        self.icon = icon
+        self.title = title
+        self.caption = caption
+        self.value = value
+        self.unit = unit
+        self.tint = tint
+    }
+
+    public var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+                Text(caption)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 6)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.system(size: 19, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.92))
+                if let unit {
+                    Text(unit)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+            }
+            .fixedSize()
+        }
+        .frame(height: 36)
+    }
+}
+
+// MARK: - 状态点
+
+public struct StateDot: View {
+    let color: Color
+    public init(color: Color) { self.color = color }
+    public var body: some View {
+        Circle().fill(color).frame(width: 4, height: 4)
+    }
+}
+
+// MARK: - 电池图形
+
+public struct BatteryGlyph: View {
+    let percent: Double?
+    let charging: Bool
+    var tint: Color
+
+    public init(percent: Double?, charging: Bool, tint: Color = Palette.mint) {
+        self.percent = percent
+        self.charging = charging
+        self.tint = tint
+    }
+
+    public var body: some View {
+        HStack(spacing: 1.5) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2.5).stroke(tint.opacity(0.65), lineWidth: 1)
+                if let percent {
+                    RoundedRectangle(cornerRadius: 1.3)
+                        .fill(tint)
+                        .frame(width: 18 * CGFloat(min(100, max(0, percent))) / 100, height: 7)
+                        .padding(.leading, 2)
+                }
+                if charging {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Color(red: 0.08, green: 0.15, blue: 0.16))
+                        .frame(width: 22, height: 11)
+                }
+            }
+            .frame(width: 22, height: 11)
+            RoundedRectangle(cornerRadius: 0.7)
+                .fill(tint.opacity(0.65))
+                .frame(width: 2, height: 4)
+        }
+        .fixedSize()
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - 顶部大号读数
+
+public struct PowerHeader: View {
+    let reading: PowerReading?
+
+    public init(reading: PowerReading?) {
+        self.reading = reading
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.circle.fill").foregroundStyle(Palette.mint)
+                        Text("WattMeter").fontWeight(.semibold)
+                    }
+                    .font(.system(size: 13))
+                    Text("整机功耗 · 每 1 秒读取")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                Spacer()
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(PowerFormat.watts(reading?.totalW))
+                        .font(.system(size: 31, weight: .light, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    Text("W")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.mint)
+                }
+            }
+
+            HStack(spacing: 6) {
+                StateDot(color: stateColor)
+                Text(reading.map { $0.batteryStateText } ?? "等待数据")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.55))
+                Spacer()
+                if let reading {
+                    BatteryGlyph(percent: reading.batteryPercent,
+                                 charging: reading.isCharging,
+                                 tint: reading.hasBattery ? Palette.mint : Palette.muted)
+                    Text(reading.batteryPercent.map { "\(Int($0.rounded()))%" } ?? "—")
+                        .monospacedDigit()
+                }
+            }
+            .font(.system(size: 10))
+        }
+    }
+
+    private var stateColor: Color {
+        guard let reading else { return Palette.muted }
+        if !reading.hasBattery { return Palette.mint }
+        if reading.isCharging { return Palette.charge }
+        if reading.onAC { return Palette.mint }
+        return Palette.amber
+    }
+}
+
+// MARK: - 电源 / 电池 占比条
+
+public struct SourceSplitBar: View {
+    let reading: PowerReading?
+
+    public init(reading: PowerReading?) {
+        self.reading = reading
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                legend(color: Palette.mint, title: "电源",
+                       watts: reading?.adapterToLoadW,
+                       percent: reading.map { $0.adapterShare * 100 })
+                Spacer(minLength: 6)
+                legend(color: Palette.amber, title: "电池",
+                       watts: reading?.batteryToLoadW,
+                       percent: reading.map { $0.batteryShare * 100 })
+            }
+
+            GeometryReader { geo in
+                let share = reading?.adapterShare ?? 1
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Palette.amber.opacity(0.25))
+                    Capsule()
+                        .fill(LinearGradient(colors: [Palette.mint, Palette.mint.opacity(0.65)],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(0, geo.size.width * share))
+                }
+            }
+            .frame(height: 6)
+        }
+    }
+
+    private func legend(color: Color, title: String, watts: Double?, percent: Double?) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+            Text(PowerFormat.wattsWithUnit(watts))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.9))
+            if let percent {
+                Text("(\(Int(percent.rounded()))%)")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .monospacedDigit()
+            }
+        }
+    }
+}
+
+// MARK: - 时间窗口选择（自定义分段控件，避免依赖 @State/@Binding）
+
+public struct WindowOption: Identifiable {
+    public let id: Double
+    public let label: String
+
+    public init(_ label: String, _ seconds: Double) {
+        self.label = label
+        self.id = seconds
+    }
+}
+
+public struct WindowPicker: View {
+    let options: [WindowOption]
+    let selected: Double
+    let onSelect: (Double) -> Void
+
+    public init(options: [WindowOption], selected: Double, onSelect: @escaping (Double) -> Void) {
+        self.options = options
+        self.selected = selected
+        self.onSelect = onSelect
+    }
+
+    public var body: some View {
+        HStack(spacing: 1) {
+            ForEach(options) { option in
+                Button {
+                    onSelect(option.id)
+                } label: {
+                    Text(option.label)
+                        .font(.system(size: 9, weight: .medium))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(selected == option.id ? Palette.mint.opacity(0.18) : Color.clear)
+                        )
+                        .foregroundStyle(selected == option.id ? Palette.mint : Color.white.opacity(0.55))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(.white.opacity(0.06))
+        )
+    }
+}
+
+// MARK: - 图例
+
+public struct ChartLegend: View {
+    let items: [(String, Color)]
+
+    public init(items: [(String, Color)]) {
+        self.items = items
+    }
+
+    public var body: some View {
+        HStack(spacing: 10) {
+            ForEach(items, id: \.0) { item in
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(item.1)
+                        .frame(width: 8, height: 8)
+                    Text(item.0)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+        }
+    }
+}

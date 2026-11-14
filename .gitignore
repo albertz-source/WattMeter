@@ -1,0 +1,10 @@
+# 构建产物
+.build/
+dist/
+
+# 根目录误留的预览图（正式预览图在 docs/）
+/preview.png
+
+# 系统垃圾
+.DS_Store
+*.tmp

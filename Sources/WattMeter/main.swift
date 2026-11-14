@@ -1,0 +1,43 @@
+import AppKit
+import WattMeterCore
+
+// --selftest：不打开界面，运行采样器 3.5 秒后打印结果并退出。
+// 用于在无 GUI 观察条件下验证 App 的完整数据链路。
+if CommandLine.arguments.contains("--selftest") {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+
+    let store = PowerStore()
+    store.start()
+
+    let deadline = Date().addingTimeInterval(3.5)
+    while Date() < deadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+    }
+
+    if let latest = store.latest {
+        print("selftest OK: \(String(format: "%.1f", latest.totalW)) W, 来源=\(latest.source.label), 样本=\(store.history.count)")
+        print("  fanRPM=\(latest.fanRPM.map { String(format: "%.0f", $0) } ?? "—")")
+        print(String(format: "  system=%.2f W  display=%.2f W  ports=%.2f W",
+                     latest.systemComponentW,
+                     latest.displayPowerW ?? -1,
+                     latest.portPowerW ?? -1))
+        print(String(format: "  adapterIn=%.2f W  battery=%.2f W  wall=%.2f W  hasBattery=%@  onAC=%@",
+                     latest.adapterInputW ?? -1,
+                     latest.batteryPowerW ?? 0,
+                     latest.wallPowerW ?? -1,
+                     latest.hasBattery ? "Y" : "N",
+                     latest.onAC ? "Y" : "N"))
+        exit(0)
+    } else {
+        print("selftest FAILED: 没有读到功率数据")
+        exit(1)
+    }
+}
+
+// 菜单栏常驻应用（Info.plist 里 LSUIElement = true，不显示 Dock 图标）
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.setActivationPolicy(.accessory)
+app.run()
