@@ -22,6 +22,7 @@ struct FlowLinkPath: Shape {
 
 public struct FlowDiagram: View {
     let reading: PowerReading?
+    @ObservedObject private var l10n = Localization.shared
 
     public init(reading: PowerReading?) {
         self.reading = reading
@@ -135,8 +136,9 @@ public struct FlowDiagram: View {
     }
 
     private func label(_ value: String, _ name: String, _ tint: Color,
-                       _ x: CGFloat, _ y: CGFloat, muted: Bool = false) -> some View {
-        VStack(spacing: 3) {
+                       _ x: CGFloat, _ y: CGFloat, muted: Bool = false,
+                       detail: String? = nil) -> some View {
+        VStack(spacing: 2) {
             Text(value)
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .monospacedDigit()
@@ -147,6 +149,13 @@ public struct FlowDiagram: View {
                 .minimumScaleFactor(0.7)
                 .frame(maxWidth: 104)
                 .foregroundStyle(tint.opacity(muted ? 0.42 : 0.82))
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 8, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.38))
+                    .lineLimit(1)
+            }
         }
         .position(x: x, y: y)
     }
@@ -163,7 +172,7 @@ public struct FlowDiagram: View {
             nodes
         }
         .frame(width: 364, height: 180)
-        .help("左为供电源，中间为整机，右侧为系统 / 屏幕 / 接口 / 电池的功率分配；流线圆点指示能量方向。")
+        .help(L("左为供电源，中间为整机，右侧为系统 / 屏幕 / 接口 / 电池的功率分配；流线圆点指示能量方向。"))
     }
 
     // 所有连线（在所有节点之下）
@@ -226,19 +235,20 @@ public struct FlowDiagram: View {
             // 左侧供电源
             if onAC {
                 node("powerplug.fill", Palette.mint, leftNodeX, hybrid ? 116 : 94, 84)
-                label(wattsText(adapterInput), "电源输入 →", Palette.mint,
-                      96, hybrid ? 116 : 94)
+                label(wattsText(adapterInput), L("电源输入 →"), Palette.mint,
+                      96, hybrid ? 116 : 94,
+                      detail: reading?.inputRailsText)
             } else if hasBattery {
                 node("battery.100percent", batteryTint, leftNodeX, 94, 84)
-                label(wattsText(batteryPower.map { abs($0) }), "电池供电 →", batteryTint, 96, 94)
+                label(wattsText(batteryPower.map { abs($0) }), L("电池供电 →"), batteryTint, 96, 94)
             } else {
                 node("powerplug.fill", Color.white.opacity(0.4), leftNodeX, 94, 84, muted: true)
-                label("—", "等待数据 →", Color.white.opacity(0.4), 96, 94, muted: true)
+                label("—", L("等待数据 →"), Color.white.opacity(0.4), 96, 94, muted: true)
             }
 
             if hybrid {
                 node("battery.100percent", batteryTint, leftNodeX, 20, 32)
-                label(wattsText(batteryPower.map { abs($0) }), "电池辅助 →", batteryTint, 97, 24)
+                label(wattsText(batteryPower.map { abs($0) }), L("电池辅助 →"), batteryTint, 97, 24)
             }
 
             // 中央整机
@@ -248,7 +258,7 @@ public struct FlowDiagram: View {
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.92))
                 .position(x: centerNodeX + 20, y: 121)
-            Text("整机 W")
+            Text(L("整机 W"))
                 .font(.system(size: 8))
                 .foregroundStyle(.white.opacity(0.45))
                 .position(x: centerNodeX + 20, y: 136)
@@ -256,24 +266,24 @@ public struct FlowDiagram: View {
             // 右侧分支
             if onAC {
                 node("cpu", systemTint, rightNodeX, 24, 40)
-                label(wattsText(system), "系统", systemTint, 261, 24)
+                label(wattsText(system), L("系统"), systemTint, 261, 24)
 
                 node("display", displayTint, rightNodeX, 70, 32, muted: display == nil)
-                label(wattsText(display), "屏幕", displayTint, 261, 70, muted: display == nil)
+                label(wattsText(display), L("屏幕"), displayTint, 261, 70, muted: display == nil)
 
                 node("cable.connector", portTint, rightNodeX, 115, 32, muted: ports == nil)
-                label(wattsText(ports), "接口", portTint, 261, 115, muted: ports == nil)
+                label(wattsText(ports), L("接口"), portTint, 261, 115, muted: ports == nil)
 
                 batteryNode
             } else {
                 node("cpu", systemTint, rightNodeX, 34, 50)
-                label(wattsText(system), "系统", systemTint, 261, 34)
+                label(wattsText(system), L("系统"), systemTint, 261, 34)
 
                 node("display", displayTint, rightNodeX, 106, 34, muted: display == nil)
-                label(wattsText(display), "屏幕", displayTint, 261, 106, muted: display == nil)
+                label(wattsText(display), L("屏幕"), displayTint, 261, 106, muted: display == nil)
 
                 node("cable.connector", portTint, rightNodeX, 160, 34, muted: ports == nil)
-                label(wattsText(ports), "接口", portTint, 261, 160, muted: ports == nil)
+                label(wattsText(ports), L("接口"), portTint, 261, 160, muted: ports == nil)
             }
         }
         .frame(width: 364, height: 180)
@@ -283,13 +293,13 @@ public struct FlowDiagram: View {
     private var batteryNode: some View {
         if charging {
             node("battery.100percent", batteryTint, rightNodeX, 160, 32)
-            label(wattsText(batteryPower), "电池充电 →", batteryTint, 261, 160)
+            label(wattsText(batteryPower), L("电池充电 →"), batteryTint, 261, 160)
         } else if hasBattery {
             node("battery.100percent", batteryTint.opacity(0.7), rightNodeX, 160, 32, muted: true)
-            label(standby ? "0.0 W" : "—", "电池待机", batteryTint, 261, 160, muted: true)
+            label(standby ? "0.0 W" : "—", L("电池待机"), batteryTint, 261, 160, muted: true)
         } else {
             node("battery.0percent", Color.white.opacity(0.4), rightNodeX, 160, 32, muted: true)
-            label("—", "无内置电池", Color.white.opacity(0.4), 261, 160, muted: true)
+            label("—", L("无内置电池"), Color.white.opacity(0.4), 261, 160, muted: true)
         }
     }
 }

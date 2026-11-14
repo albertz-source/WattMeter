@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.target = self
         button.action = #selector(statusItemClicked)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        button.toolTip = "WattMeter — 实时功率"
+        button.toolTip = L("WattMeter — 实时功率")
     }
 
     private func updateStatusItem(_ reading: PowerReading?) {
@@ -75,17 +75,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 按文字宽度自适应，避免菜单栏里出现过多空白
         let width = (title as NSString).size(withAttributes: [.font: button.font ?? NSFont.systemFont(ofSize: 11)]).width
         statusItem.length = ceil(width) + 6
-        var tip = "WattMeter · 整机 \(PowerFormat.wattsWithUnit(reading.totalW)) · "
-            + "电源 \(PowerFormat.wattsWithUnit(reading.adapterToLoadW)) · "
-            + "电池 \(PowerFormat.wattsWithUnit(reading.batteryToLoadW))"
+        var tip = "WattMeter · " + L("整机") + " " + PowerFormat.wattsWithUnit(reading.totalW)
+        tip += " · " + L("电源") + " " + PowerFormat.wattsWithUnit(reading.adapterToLoadW)
+        tip += " · " + L("电池") + " " + PowerFormat.wattsWithUnit(reading.batteryToLoadW)
         if let rails = reading.inputRailsText {
-            tip += " · 输入 \(rails)"
+            tip += " · " + L("输入") + " " + rails
         }
         if let cpu = reading.cpuTempC {
             tip += " · CPU \(String(format: "%.0f°C", cpu))"
         }
         if let fan = reading.fanRPM {
-            tip += " · 风扇 \(String(format: "%.0f RPM", fan))"
+            tip += " · " + L("风扇") + " \(String(format: "%.0f RPM", fan))"
         }
         button.toolTip = tip
     }
@@ -104,21 +104,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         loginItem.refresh()
 
-        let openItem = NSMenuItem(title: "打开主窗口", action: #selector(openMainWindow), keyEquivalent: "o")
+        let openItem = NSMenuItem(title: L("打开主窗口"), action: #selector(openMainWindow), keyEquivalent: "o")
         openItem.target = self
         menu.addItem(openItem)
 
         let loginText = loginItem.requiresApproval
-            ? "开机自动启动（等待系统批准…）"
-            : "开机自动启动"
+            ? L("开机自动启动（等待系统批准…）")
+            : L("开机自动启动")
         let loginMenuItem = NSMenuItem(title: loginText, action: #selector(toggleLoginItem), keyEquivalent: "")
         loginMenuItem.target = self
         loginMenuItem.state = loginItem.enabled ? .on : .off
         menu.addItem(loginMenuItem)
 
+        // 语言切换
+        let languageItem = NSMenuItem(title: L("关于语言"), action: nil, keyEquivalent: "")
+        let languageMenu = NSMenu()
+        for language in AppLanguage.allCases {
+            let item = NSMenuItem(title: language.nativeName, action: #selector(selectLanguage(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = language.rawValue
+            item.state = (Localization.shared.language == language) ? .on : .off
+            languageMenu.addItem(item)
+        }
+        languageItem.submenu = languageMenu
+        menu.addItem(languageItem)
+
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "退出 WattMeter", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: L("退出 WattMeter"), action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -137,13 +150,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onQuit: { NSApp.terminate(nil) }
         )
         let controller = NSHostingController(rootView: root)
-        controller.preferredContentSize = NSSize(width: 400, height: 672)
+        controller.preferredContentSize = NSSize(width: 400, height: 680)
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentSize = NSSize(width: 400, height: 672)
+        popover.contentSize = NSSize(width: 400, height: 680)
         popover.contentViewController = controller
         self.popover = popover
     }
@@ -173,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             // 内容实测高度约 820pt；按真实内容开窗，避免底部被裁掉。
             // 用户手动缩小时由 MainWindowView 的 ScrollView 兜底。
-            window.setContentSize(NSSize(width: 1020, height: 820))
+            window.setContentSize(NSSize(width: 1020, height: 832))
             window.minSize = NSSize(width: 960, height: 600)
             window.isReleasedWhenClosed = false
             window.tabbingMode = .disallowed
@@ -193,6 +206,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func selectLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let language = AppLanguage(rawValue: raw) else { return }
+        Localization.shared.setLanguage(language)
+    }
+
     @objc private func toggleLoginItem() {
         // 等待系统批准时，直接带用户去「登录项」设置
         if loginItem.requiresApproval {
@@ -201,10 +220,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if !loginItem.setEnabled(!loginItem.enabled) {
             let alert = NSAlert()
-            alert.messageText = "无法修改开机自动启动"
-            alert.informativeText = loginItem.lastError ?? "未知错误。可以把 WattMeter.app 放到「应用程序」文件夹后再试。"
+            alert.messageText = L("无法修改开机自动启动")
+            alert.informativeText = loginItem.lastError ?? L("未知错误。可以把 WattMeter.app 放到「应用程序」文件夹后再试。")
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "好")
+            alert.addButton(withTitle: L("好"))
             alert.runModal()
         }
     }

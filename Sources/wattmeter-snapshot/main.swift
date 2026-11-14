@@ -11,6 +11,7 @@ var width: CGFloat = 380
 var scale: CGFloat = 2
 var viewName = "dashboard"
 var stateName = "auto"
+var langName: String?
 
 var index = 1
 while index < CommandLine.arguments.count {
@@ -35,6 +36,9 @@ while index < CommandLine.arguments.count {
     case "--state":
         index += 1
         if index < CommandLine.arguments.count { stateName = CommandLine.arguments[index] }
+    case "--lang":
+        index += 1
+        if index < CommandLine.arguments.count { langName = CommandLine.arguments[index] }
     default:
         break
     }
@@ -52,6 +56,9 @@ MainActor.assumeIsolated {
     app.setActivationPolicy(.prohibited)
 
     RenderSettings.isPreviewing = true
+    if let langName, let parsed = AppLanguage(rawValue: langName) {
+        Localization.shared.setLanguage(parsed)
+    }
 
     let store = PowerStore()
     let endPhase: Double?

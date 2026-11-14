@@ -7,11 +7,12 @@
 - Swift + SwiftUI + Swift Charts，无第三方依赖
 - **免 root、免内核扩展、无网络访问** —— 只读 IOKit / SMC
 - 可选**开机自动启动**（`SMAppService.mainApp`，不需要辅助进程）
+- **中英双语界面**，面板底部或右键菜单切换（会记住选择）
 - 只用 macOS 自带的 Command Line Tools 即可构建（不需要 Xcode）
 
 | 菜单栏面板（充电中） | 面板（电池放电） | 主窗口 |
 | --- | --- | --- |
-| ![panel](docs/preview-panel.png) | ![battery](docs/preview-panel-battery.png) | ![window](docs/preview-window.png) |
+| ![panel](docs/preview-panel-zh.png) | ![battery](docs/preview-panel-battery-zh.png) | ![window](docs/preview-window-zh.png) |
 
 *截图由 `wattmeter-snapshot` 使用内置演示数据离屏渲染，不需要屏幕录制权限。*
 
@@ -34,7 +35,7 @@
 | 数据 | API / 键 | 刷新 | 说明 |
 | --- | --- | --- | --- |
 | 整机功率 | AppleSMC `PSTR` | 亚秒级 | 系统总轨 |
-| 适配器 DC 输入 | AppleSMC `PDTR`、`PD0R` | 亚秒级 | `PD0R` 常见于台式机 |
+| 适配器 DC 输入 | AppleSMC `PDTR`、`PD0R` | 亚秒级 | `PD0R` 常见于台式机；流向图输入端直接显示实测 V × A |
 | 输入电压 / 电流 | AppleSMC `VD0R` / `ID0R` | 亚秒级 | 实测轨；`PDTR` 恒等于 `VD0R × ID0R` |
 | 电池功率 | `AppleSmartBattery` 电压 × 电流 | 约 1 秒 | 符号按充放电状态归一化 |
 | 电池状态 / 电量 / 剩余时间 | IOKit `IOPowerSources` | 事件驱动 | |
@@ -134,13 +135,14 @@ wattmeter/
 
 | 元素 | 说明 |
 | --- | --- |
-| 面板 | 400 × 672 pt 深色毛玻璃（`NSVisualEffectView`，`.popover` 材质、behind-window、darkAqua） |
+| 面板 | 400 × 680 pt 深色毛玻璃（`NSVisualEffectView`，`.popover` 材质、behind-window、darkAqua） |
 | 强调色 | mint `#6EE0C2`（电源）、amber `#F5C273`（电池）、blue `#7DB0FA`（系统）、purple `#BA9CF5`（适配器/接口） |
 | 字体 | SF Rounded；主读数 31 pt light，行内读数 19 pt medium，说明文字 9–10 pt |
 | 流向图 | 364 × 180：左侧供电源、中间整机、右侧四条分支（系统 / 屏幕 / 接口 / 电池）。圆角贝塞尔流线，渐变 + 辉光 + **由电源向负载流动**的光点；线宽固定 14 pt，读数跳动时不会抖动 |
 | 温度 | 面板内 CPU / GPU / SSD / 电池 温度胶囊；主窗口有完整温度卡。高于 65 °C 转琥珀色，高于 80 °C 转红色 |
 | 图表 | 电源与电池的堆叠面积图；主窗口另有整机功率 / 电池净功率折线图 |
-| 主窗口 | 1020 × 820 pt（手动缩小时可滚动）：流向图、堆叠面积图、折线图，以及适配器 / 电池 / 温度卡 |
+| 主窗口 | 1020 × 832 pt（手动缩小时可滚动）：流向图、堆叠面积图、折线图，以及适配器 / 电池 / 温度卡 |
+| 语言 | 英文 / 简体中文，面板底部或右键菜单切换（会持久化） |
 | 开机启动 | 面板底部或右键菜单里切换。使用 `SMAppService.mainApp`；系统可能要求在「系统设置 → 通用 → 登录项」里批准 |
 | 菜单栏 | 等宽数字、按文字宽度自适应、tooltip 带明细、单实例保护 |
 

@@ -7,6 +7,7 @@ A native macOS menu-bar power monitor. It shows real-time system power, how much
 - Swift + SwiftUI + Swift Charts, no third-party dependencies
 - **No root, no kernel extension, no network access** — read-only IOKit/SMC access
 - Optional **launch at login** (`SMAppService.mainApp`, no helper process)
+- **Bilingual UI** (English / 简体中文) — switch from the panel footer or the right-click menu
 - Builds with the macOS Command Line Tools alone (Xcode not required)
 
 | Menu bar panel (charging) | Panel (battery) | Main window |
@@ -34,7 +35,7 @@ Also included: adapter DC input (with measured input voltage and current) and ra
 | Source | API / keys | Typical refresh | Notes |
 | --- | --- | --- | --- |
 | Total system power | AppleSMC `PSTR` | sub-second | whole-system rail |
-| Adapter DC input | AppleSMC `PDTR`, `PD0R` | sub-second | `PD0R` exists on desktop Macs |
+| Adapter DC input | AppleSMC `PDTR`, `PD0R` | sub-second | `PD0R` exists on desktop Macs; the flow diagram shows measured V × A on the input node |
 | Input voltage / current | AppleSMC `VD0R` / `ID0R` | sub-second | measured rails; `PDTR` equals `VD0R × ID0R` |
 | Battery power | `AppleSmartBattery` voltage × amperage | ~1 s | sign normalised by charge state |
 | Battery state / % / time left | IOKit `IOPowerSources` | event-driven | |
@@ -134,13 +135,14 @@ The visual language is inspired by [PowerLens](https://github.com/kinghhhin-desi
 
 | Element | Detail |
 | --- | --- |
-| Panel | 400 × 672 pt dark frosted glass (`NSVisualEffectView` with `.popover` material, behind-window, darkAqua) |
+| Panel | 400 × 680 pt dark frosted glass (`NSVisualEffectView` with `.popover` material, behind-window, darkAqua) |
 | Accents | mint `#6EE0C2` (power), amber `#F5C273` (battery), blue `#7DB0FA` (system), purple `#BA9CF5` (adapter/ports) |
 | Type | SF Rounded; 31 pt light primary readout, 19 pt medium row values, 9–10 pt captions |
 | Flow diagram | 364 × 180: source on the left, Mac in the middle, four branches on the right (system / display / ports / battery). Rounded bezier links with gradient, glow and dots flowing **from source to load**. Link width is fixed at 14 pt so the diagram does not jitter when readings change |
 | Temperatures | CPU / GPU / SSD / battery chips in the panel; a full temperature card in the main window. Values turn amber above 65 °C and red above 80 °C |
 | Charts | Stacked area of adapter vs battery, plus a total/net-battery line chart in the main window |
-| Main window | 1020 × 820 pt (scrollable if the user shrinks it): flow diagram, stacked area chart, line chart, and adapter / battery / temperature cards |
+| Main window | 1020 × 832 pt (scrollable if the user shrinks it): flow diagram, stacked area chart, line chart, and adapter / battery / temperature cards |
+| Language | English / 简体中文, switch in the panel footer or via the right-click menu (persisted) |
 | Launch at login | Toggle in the panel footer or the right-click menu. Uses `SMAppService.mainApp`; macOS may ask for approval in System Settings → General → Login Items |
 | Menu bar | Monospaced digits, width auto-fitted, detailed tooltip, single-instance guard |
 

@@ -5,6 +5,7 @@ import WattMeterCore
 public struct DashboardView: View {
     @ObservedObject private var store: PowerStore
     @ObservedObject private var loginItem: LoginItemController
+    @ObservedObject private var l10n = Localization.shared
     private let onOpenWindow: () -> Void
     private let onQuit: () -> Void
 
@@ -21,7 +22,7 @@ public struct DashboardView: View {
     private var samples: [PowerReading] { store.readings(in: store.windowSeconds) }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 11) {
             PowerHeader(reading: store.latest)
             FlowDiagram(reading: store.latest)
             SourceSplitBar(reading: store.latest)
@@ -30,7 +31,7 @@ public struct DashboardView: View {
             rowsCard
             footerBar
         }
-        .padding(16)
+        .padding(14)
         .frame(width: 400)
         .background(PanelBackground())
         .environment(\.colorScheme, .dark)
@@ -41,16 +42,8 @@ public struct DashboardView: View {
     // MARK: - 趋势
 
     private var trendCard: some View {
-        Card(title: "功率趋势", subtitle: windowLabel) {
+        Card(title: L("功率趋势"), subtitle: localizedWindowLabel(store.windowSeconds)) {
             TrendSparkline(readings: samples, height: 54)
-        }
-    }
-
-    private var windowLabel: String {
-        switch store.windowSeconds {
-        case 60: return "最近 1 分钟"
-        case 900: return "最近 15 分钟"
-        default: return "最近 5 分钟"
         }
     }
 
@@ -60,28 +53,28 @@ public struct DashboardView: View {
         let latest = store.latest
         return VStack(spacing: 1) {
             PowerRow(icon: "powerplug.fill",
-                     title: "适配器输入",
-                     caption: latest?.source == .telemetry ? "DC 输入 · 系统遥测" : "DC 输入 · SMC 实时",
+                     title: L("适配器输入"),
+                     caption: latest.map { L($0.source.label) } ?? "—",
                      value: PowerFormat.watts(latest?.adapterInputW),
                      unit: "W",
                      tint: Palette.mint)
             Divider().opacity(0.18)
             PowerRow(icon: "bolt.horizontal.fill",
-                     title: "墙插估算",
-                     caption: "含适配器损耗",
+                     title: L("墙插估算"),
+                     caption: L("含适配器损耗"),
                      value: PowerFormat.watts(latest?.wallPowerW),
                      unit: "W",
                      tint: Palette.purple)
             Divider().opacity(0.18)
             PowerRow(icon: "battery.100percent",
-                     title: "电池净功率",
+                     title: L("电池净功率"),
                      caption: batteryCaption,
                      value: signedWatts(latest?.batteryPowerW),
                      unit: "W",
                      tint: Palette.amber)
             Divider().opacity(0.18)
             PowerRow(icon: "fan",
-                     title: "风扇转速",
+                     title: L("风扇转速"),
                      caption: fanCaption,
                      value: latest?.fanText ?? "—",
                      unit: "RPM",
@@ -97,7 +90,7 @@ public struct DashboardView: View {
     }
 
     private var fanCaption: String {
-        guard let latest = store.latest, latest.fanRPM != nil else { return "无风扇或不可读" }
+        guard let latest = store.latest, latest.fanRPM != nil else { return L("无风扇或不可读") }
         if let min = latest.fanMinRPM, let max = latest.fanMaxRPM {
             return String(format: "SMC F0Ac · %.0f–%.0f RPM", min, max)
         }
@@ -105,11 +98,11 @@ public struct DashboardView: View {
     }
 
     private var batteryCaption: String {
-        guard let latest = store.latest else { return "等待数据" }
-        if !latest.hasBattery { return "本机无内置电池" }
-        if latest.isCharging { return "充电中 · \(latest.timeRemainingText)" }
-        if !latest.onAC { return "放电中 · 剩余 \(latest.timeRemainingText)" }
-        return latest.isCharged ? "已充满" : "外接电源 · 待机"
+        guard let latest = store.latest else { return L("等待数据") }
+        if !latest.hasBattery { return L("本机无内置电池") }
+        let state = L(latest.batteryStateText)
+        guard let minutes = latest.timeRemainingMinutes, minutes > 0 else { return state }
+        return state + " · " + localizedTimeRemaining(minutes)
     }
 
     // MARK: - 底部
@@ -117,12 +110,12 @@ public struct DashboardView: View {
     private var footerBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("峰值 \(PowerFormat.wattsWithUnit(store.peakW))")
+                Text(L("峰值") + " " + PowerFormat.wattsWithUnit(store.peakW))
                 Text("·")
-                Text("累计 \(String(format: "%.2f", store.sessionEnergyWh)) Wh")
+                Text(L("累计") + " " + String(format: "%.2f", store.sessionEnergyWh) + " Wh")
                 if let rails = store.latest?.inputRailsText {
                     Text("·")
-                    Text("输入 \(rails)")
+                    Text(L("输入") + " " + rails)
                 }
                 Spacer()
             }
@@ -134,7 +127,7 @@ public struct DashboardView: View {
                 Button {
                     onOpenWindow()
                 } label: {
-                    Label("完整窗口", systemImage: "macwindow")
+                    Label(L("完整窗口"), systemImage: "macwindow")
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
@@ -150,9 +143,9 @@ public struct DashboardView: View {
                     HStack(spacing: 4) {
                         Image(systemName: loginItem.enabled ? "checkmark.circle.fill" : "power.circle")
                             .font(.system(size: 10))
-                        Text("开机启动").font(.system(size: 10))
+                        Text(L("开机启动")).font(.system(size: 10))
                         if loginItem.requiresApproval {
-                            Text("待批准").font(.system(size: 8)).opacity(0.7)
+                            Text(L("待批准")).font(.system(size: 8)).opacity(0.7)
                         }
                     }
                     .padding(.horizontal, 7)
@@ -165,9 +158,24 @@ public struct DashboardView: View {
                     .foregroundStyle(loginItem.enabled ? Palette.mint : Color.white.opacity(0.55))
                 }
                 .buttonStyle(.plain)
-                .help("登录时自动启动 WattMeter · \(loginItem.statusDescription)")
+                .help(L("登录时自动启动 WattMeter · ") + L(loginItem.statusDescription))
 
                 Spacer()
+
+                Button {
+                    l10n.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "globe").font(.system(size: 10))
+                        Text(l10n.language == .zh ? "EN" : "中").font(.system(size: 10, weight: .medium))
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.06)))
+                    .foregroundStyle(.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .help(L("关于语言"))
 
                 Button {
                     onQuit()
@@ -176,7 +184,7 @@ public struct DashboardView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.55))
-                .help("退出 WattMeter")
+                .help(L("退出 WattMeter"))
             }
         }
     }

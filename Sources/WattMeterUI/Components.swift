@@ -223,6 +223,7 @@ public struct BatteryGlyph: View {
 
 public struct PowerHeader: View {
     let reading: PowerReading?
+    @ObservedObject private var l10n = Localization.shared
 
     public init(reading: PowerReading?) {
         self.reading = reading
@@ -237,7 +238,7 @@ public struct PowerHeader: View {
                         Text("WattMeter").fontWeight(.semibold)
                     }
                     .font(.system(size: 13))
-                    Text("整机功耗 · 每 1 秒读取")
+                    Text(L("整机功耗 · 每 1 秒读取"))
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.5))
                 }
@@ -255,7 +256,7 @@ public struct PowerHeader: View {
 
             HStack(spacing: 6) {
                 StateDot(color: stateColor)
-                Text(reading.map { $0.batteryStateText } ?? "等待数据")
+                Text(reading.map { L($0.batteryStateText) } ?? L("等待数据"))
                     .font(.system(size: 9))
                     .foregroundStyle(.white.opacity(0.55))
                 Spacer()
@@ -284,6 +285,7 @@ public struct PowerHeader: View {
 
 public struct SourceSplitBar: View {
     let reading: PowerReading?
+    @ObservedObject private var l10n = Localization.shared
 
     public init(reading: PowerReading?) {
         self.reading = reading
@@ -292,11 +294,11 @@ public struct SourceSplitBar: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                legend(color: Palette.mint, title: "电源",
+                legend(color: Palette.mint, title: L("电源"),
                        watts: reading?.adapterToLoadW,
                        percent: reading.map { $0.adapterShare * 100 })
                 Spacer(minLength: 6)
-                legend(color: Palette.amber, title: "电池",
+                legend(color: Palette.amber, title: L("电池"),
                        watts: reading?.batteryToLoadW,
                        percent: reading.map { $0.batteryShare * 100 })
             }
