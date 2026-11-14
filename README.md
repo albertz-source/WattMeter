@@ -14,8 +14,6 @@ A native macOS menu-bar power monitor. It shows real-time system power, how much
 | --- | --- | --- |
 | ![panel](docs/preview-panel.png) | ![battery](docs/preview-panel-battery.png) | ![window](docs/preview-window.png) |
 
-*(Screenshots are rendered off-screen by `wattmeter-snapshot` from built-in demo data — no screen-recording permission needed.)*
-
 ---
 
 ## 1. What it shows
@@ -179,6 +177,20 @@ dist/WattMeter.app/Contents/MacOS/WattMeter --login-item enable   # register (di
 The DMG (created by `scripts/package-dmg.sh`) contains `WattMeter.app`, an `Applications` shortcut and a short install note: open it, drag the app to Applications, eject.
 
 > Why not SwiftPM: `swift build` needs writable user-level caches and sandbox permission for manifest compilation, which fails in restricted environments. `scripts/build.sh` calls `clang`/`swiftc` directly and keeps all caches inside the project. On a normal machine with Xcode, `swift build` works too.
+
+### Publishing a release
+
+```bash
+# 1. bump the version in Resources/Info.plist (CFBundleShortVersionString / CFBundleVersion)
+./scripts/build.sh release
+./scripts/package-dmg.sh          # → dist/WattMeter-<version>.dmg
+git tag v<version>
+git push origin v<version>
+```
+
+Then on GitHub: **Releases → Draft a new release → choose the tag → attach
+`dist/WattMeter-<version>.dmg` → publish**. Users download the DMG, open it and
+drag `WattMeter.app` into Applications.
 
 ### Distribution
 

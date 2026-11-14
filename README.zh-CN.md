@@ -14,8 +14,6 @@
 | --- | --- | --- |
 | ![panel](docs/preview-panel-zh.png) | ![battery](docs/preview-panel-battery-zh.png) | ![window](docs/preview-window-zh.png) |
 
-*截图由 `wattmeter-snapshot` 使用内置演示数据离屏渲染，不需要屏幕录制权限。*
-
 ---
 
 ## 1. 显示内容
@@ -179,6 +177,20 @@ dist/WattMeter.app/Contents/MacOS/WattMeter --login-item enable   # 开启（dis
 `scripts/package-dmg.sh` 生成的 DMG 内含 `WattMeter.app`、`Applications` 快捷方式和安装说明：打开后把 App 拖进 Applications 即可。
 
 > 为什么不用 SwiftPM：`swift build` 需要可写的用户级缓存和 manifest 编译的沙盒权限，在受限环境会失败。`scripts/build.sh` 直接调用 `clang`/`swiftc`，所有缓存放在项目内。在装有 Xcode 的普通机器上 `swift build` 同样可用。
+
+### 发布 Release
+
+```bash
+# 1. 先改 Resources/Info.plist 里的版本号（CFBundleShortVersionString / CFBundleVersion）
+./scripts/build.sh release
+./scripts/package-dmg.sh          # 生成 dist/WattMeter-<版本>.dmg
+git tag v<版本>
+git push origin v<版本>
+```
+
+然后在 GitHub 上：**Releases → Draft a new release → 选择该 tag → 附上
+`dist/WattMeter-<版本>.dmg` → 发布**。用户下载 DMG 后双击挂载，把 `WattMeter.app`
+拖进「应用程序」即可。
 
 ### 分发
 
