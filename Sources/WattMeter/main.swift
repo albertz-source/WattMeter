@@ -1,5 +1,11 @@
 import AppKit
 import WattMeterCore
+import WattMeterUI
+
+// --login-item：命令行查看/开关登录项（便于验证与自动化）
+if CommandLine.arguments.contains("--login-item") {
+    LoginItemController().handleCommandLine()
+}
 
 // --selftest：不打开界面，运行采样器 3.5 秒后打印结果并退出。
 // 用于在无 GUI 观察条件下验证 App 的完整数据链路。

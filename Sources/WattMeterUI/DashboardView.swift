@@ -4,13 +4,16 @@ import WattMeterCore
 /// 菜单栏弹出面板
 public struct DashboardView: View {
     @ObservedObject private var store: PowerStore
+    @ObservedObject private var loginItem: LoginItemController
     private let onOpenWindow: () -> Void
     private let onQuit: () -> Void
 
     public init(store: PowerStore,
+                loginItem: LoginItemController = LoginItemController(),
                 onOpenWindow: @escaping () -> Void = {},
                 onQuit: @escaping () -> Void = {}) {
         self.store = store
+        self.loginItem = loginItem
         self.onOpenWindow = onOpenWindow
         self.onQuit = onQuit
     }
@@ -132,6 +135,33 @@ public struct DashboardView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Palette.mint)
+
+                Button {
+                    if loginItem.requiresApproval {
+                        loginItem.openSystemSettings()
+                    } else {
+                        loginItem.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: loginItem.enabled ? "checkmark.circle.fill" : "power.circle")
+                            .font(.system(size: 10))
+                        Text("开机启动").font(.system(size: 10))
+                        if loginItem.requiresApproval {
+                            Text("待批准").font(.system(size: 8)).opacity(0.7)
+                        }
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(loginItem.enabled
+                                       ? Palette.mint.opacity(0.18)
+                                       : Color.white.opacity(0.06))
+                    )
+                    .foregroundStyle(loginItem.enabled ? Palette.mint : Color.white.opacity(0.55))
+                }
+                .buttonStyle(.plain)
+                .help("登录时自动启动 WattMeter · \(loginItem.statusDescription)")
 
                 Spacer()
 

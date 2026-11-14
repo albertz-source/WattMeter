@@ -6,6 +6,7 @@
 
 - Swift + SwiftUI + Swift Charts，无第三方依赖
 - **免 root、免内核扩展、无网络访问** —— 只读 IOKit / SMC
+- 可选**开机自动启动**（`SMAppService.mainApp`，不需要辅助进程）
 - 只用 macOS 自带的 Command Line Tools 即可构建（不需要 Xcode）
 
 | 菜单栏面板（充电中） | 面板（电池放电） | 主窗口 |
@@ -132,13 +133,14 @@ wattmeter/
 
 | 元素 | 说明 |
 | --- | --- |
-| 面板 | 400 × 666 pt 深色毛玻璃（`NSVisualEffectView`，`.popover` 材质、behind-window、darkAqua） |
+| 面板 | 400 × 672 pt 深色毛玻璃（`NSVisualEffectView`，`.popover` 材质、behind-window、darkAqua） |
 | 强调色 | mint `#6EE0C2`（电源）、amber `#F5C273`（电池）、blue `#7DB0FA`（系统）、purple `#BA9CF5`（适配器/接口） |
 | 字体 | SF Rounded；主读数 31 pt light，行内读数 19 pt medium，说明文字 9–10 pt |
 | 流向图 | 364 × 180：左侧供电源、中间整机、右侧四条分支（系统 / 屏幕 / 接口 / 电池）。圆角贝塞尔流线，渐变 + 辉光 + **由电源向负载流动**的光点；线宽固定 14 pt，读数跳动时不会抖动 |
 | 温度 | 面板内 CPU / GPU / SSD / 电池 温度胶囊；主窗口有完整温度卡。高于 65 °C 转琥珀色，高于 80 °C 转红色 |
 | 图表 | 电源与电池的堆叠面积图；主窗口另有整机功率 / 电池净功率折线图 |
 | 主窗口 | 1020 × 820 pt（手动缩小时可滚动）：流向图、堆叠面积图、折线图，以及适配器 / 电池 / 温度卡 |
+| 开机启动 | 面板底部或右键菜单里切换。使用 `SMAppService.mainApp`；系统可能要求在「系统设置 → 通用 → 登录项」里批准 |
 | 菜单栏 | 等宽数字、按文字宽度自适应、tooltip 带明细、单实例保护 |
 
 充电 / 放电 / 电池待机 / 无电池的台式机各有不同的流向图布局；没有遥测的分支会变淡而不是隐藏。
@@ -167,6 +169,8 @@ open dist/WattMeter.app            # 菜单栏应用，无 Dock 图标
 ```bash
 dist/WattMeter.app/Contents/MacOS/WattMeter --selftest   # 采样 3.5 秒并打印
 dist/WattMeter.app/Contents/MacOS/WattMeter --diag       # 检查状态项是否创建成功
+dist/WattMeter.app/Contents/MacOS/WattMeter --login-item status   # 查看开机自启状态
+dist/WattMeter.app/Contents/MacOS/WattMeter --login-item enable   # 开启（disable 关闭）
 ```
 
 `scripts/package-dmg.sh` 生成的 DMG 内含 `WattMeter.app`、`Applications` 快捷方式和安装说明：打开后把 App 拖进 Applications 即可。

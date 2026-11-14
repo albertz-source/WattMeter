@@ -6,6 +6,7 @@ import WattMeterUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = PowerStore()
+    private let loginItem = LoginItemController()
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var mainWindow: NSWindow?
@@ -98,9 +99,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem.button else { return }
         let menu = NSMenu()
 
+        loginItem.refresh()
+
         let openItem = NSMenuItem(title: "打开主窗口", action: #selector(openMainWindow), keyEquivalent: "o")
         openItem.target = self
         menu.addItem(openItem)
+
+        let loginText = loginItem.requiresApproval
+            ? "开机自动启动（等待系统批准…）"
+            : "开机自动启动"
+        let loginMenuItem = NSMenuItem(title: loginText, action: #selector(toggleLoginItem), keyEquivalent: "")
+        loginMenuItem.target = self
+        loginMenuItem.state = loginItem.enabled ? .on : .off
+        menu.addItem(loginMenuItem)
 
         menu.addItem(.separator())
 
@@ -118,22 +129,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPopover() {
         let root = DashboardView(
             store: store,
+            loginItem: loginItem,
             onOpenWindow: { [weak self] in self?.openMainWindow() },
             onQuit: { NSApp.terminate(nil) }
         )
         let controller = NSHostingController(rootView: root)
-        controller.preferredContentSize = NSSize(width: 400, height: 666)
+        controller.preferredContentSize = NSSize(width: 400, height: 672)
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentSize = NSSize(width: 400, height: 666)
+        popover.contentSize = NSSize(width: 400, height: 672)
         popover.contentViewController = controller
         self.popover = popover
     }
 
     private func togglePopover() {
+        loginItem.refresh()
         guard let button = statusItem.button else { return }
         if popover.isShown {
             popover.performClose(nil)
@@ -174,6 +187,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let report = "frame=\(window.frame) content=\(window.contentLayoutRect) screenVisible=\(screen)"
             FileHandle.standardOutput.write(Data((report + "\n").utf8))
             try? report.write(toFile: "/tmp/wattmeter-window.txt", atomically: true, encoding: .utf8)
+        }
+    }
+
+    @objc private func toggleLoginItem() {
+        // 等待系统批准时，直接带用户去「登录项」设置
+        if loginItem.requiresApproval {
+            loginItem.openSystemSettings()
+            return
+        }
+        if !loginItem.setEnabled(!loginItem.enabled) {
+            let alert = NSAlert()
+            alert.messageText = "无法修改开机自动启动"
+            alert.informativeText = loginItem.lastError ?? "未知错误。可以把 WattMeter.app 放到「应用程序」文件夹后再试。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "好")
+            alert.runModal()
         }
     }
 
