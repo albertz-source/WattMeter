@@ -120,6 +120,10 @@ public struct DashboardView: View {
                 Text("峰值 \(PowerFormat.wattsWithUnit(store.peakW))")
                 Text("·")
                 Text("累计 \(String(format: "%.2f", store.sessionEnergyWh)) Wh")
+                if let rails = store.latest?.inputRailsText {
+                    Text("·")
+                    Text("输入 \(rails)")
+                }
                 Spacer()
             }
             .font(.system(size: 9))

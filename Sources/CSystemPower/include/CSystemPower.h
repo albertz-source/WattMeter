@@ -32,6 +32,8 @@ typedef struct SPReading {
     double  systemLoad_mW;            // 系统负载
     double  batteryPower_mW;          // 电池功率（符号含义随机型，仅作兜底）
     double  adapterEfficiencyLoss_mW; // 适配器/充电电路损耗估计
+    double  systemVoltageIn_mV;       // 适配器输入电压（遥测，约 20 秒刷新）
+    double  systemCurrentIn_mA;       // 适配器输入电流（遥测，约 20 秒刷新）
 
     /* ---- AppleSmartBattery.AdapterDetails ---- */
     int32_t adapterKnown;
@@ -39,6 +41,11 @@ typedef struct SPReading {
     double  adapterVoltage_mV;
     double  adapterCurrent_mA;
     char    adapterName[128];
+
+    /* ---- 适配器输入电压 / 电流（SMC VD0R / ID0R） ---- */
+    int32_t smcHasInputRails;
+    double  smcInputVoltage_V;
+    double  smcInputCurrent_A;
 
     /* ---- 电池电气量（AppleSmartBattery） ---- */
     double  batteryVoltage_mV;

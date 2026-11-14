@@ -58,6 +58,10 @@ public struct PowerReading: Identifiable, Sendable {
     /// 对外供电接口功率（PowerOutDetails 汇总，部分机型可读）
     public let portPowerW: Double?
 
+    /// 适配器输入电压 / 电流（V / A，SMC VD0R × ID0R；缺失时用遥测兜底）
+    public let inputVoltageV: Double?
+    public let inputCurrentA: Double?
+
     /// 组件温度（℃，读不到为 nil）
     public let cpuTempC: Double?
     public let gpuTempC: Double?
@@ -90,6 +94,15 @@ public struct PowerReading: Identifiable, Sendable {
     /// 扣掉已知分项后的「系统」功率（CPU/内存/其他）
     public var systemComponentW: Double {
         max(0, totalW - (displayPowerW ?? 0) - (portPowerW ?? 0))
+    }
+
+    /// 输入电压 × 电流文案
+    public var inputRailsText: String? {
+        guard let inputVoltageV, inputVoltageV > 0 else { return nil }
+        if let inputCurrentA {
+            return String(format: "%.2f V × %.2f A", inputVoltageV, inputCurrentA)
+        }
+        return String(format: "%.2f V", inputVoltageV)
     }
 
     /// 最高组件温度（用于菜单栏 tooltip / 概览）
@@ -149,6 +162,8 @@ public struct PowerReading: Identifiable, Sendable {
         timeRemainingMinutes: Double?,
         displayPowerW: Double? = nil,
         portPowerW: Double? = nil,
+        inputVoltageV: Double? = nil,
+        inputCurrentA: Double? = nil,
         cpuTempC: Double? = nil,
         gpuTempC: Double? = nil,
         ssdTempC: Double? = nil,
@@ -178,6 +193,8 @@ public struct PowerReading: Identifiable, Sendable {
         self.timeRemainingMinutes = timeRemainingMinutes
         self.displayPowerW = displayPowerW
         self.portPowerW = portPowerW
+        self.inputVoltageV = inputVoltageV
+        self.inputCurrentA = inputCurrentA
         self.cpuTempC = cpuTempC
         self.gpuTempC = gpuTempC
         self.ssdTempC = ssdTempC

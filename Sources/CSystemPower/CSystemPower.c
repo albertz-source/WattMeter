@@ -297,6 +297,8 @@ static void read_smart_battery(SPReading *r) {
             r->systemLoad_mW = load < 0 ? 0 : load;
             r->batteryPower_mW = cf_double(pt, CFSTR("BatteryPower"), 0.0);
             r->adapterEfficiencyLoss_mW = cf_double(pt, CFSTR("AdapterEfficiencyLoss"), 0.0);
+            r->systemVoltageIn_mV = cf_double(pt, CFSTR("SystemVoltageIn"), 0.0);
+            r->systemCurrentIn_mA = cf_double(pt, CFSTR("SystemCurrentIn"), 0.0);
         }
     }
 
@@ -456,6 +458,19 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
         if (smc_read_flt(reader->smcConnection, "PD0R", &v) == 0) {
             out->smcHasDesktopInputPower = 1;
             out->smcDesktopInputPower_W = v;
+        }
+
+        /* 适配器输入电压 / 电流：VD0R × ID0R = PDTR（实测完全一致） */
+        {
+            double railV = 0, railI = 0;
+            if (smc_read_number(reader->smcConnection, "VD0R", &railV) == 0
+                && railV > 0.1 && railV < 30.0
+                && smc_read_number(reader->smcConnection, "ID0R", &railI) == 0
+                && railI >= 0 && railI < 20.0) {
+                out->smcHasInputRails = 1;
+                out->smcInputVoltage_V = railV;
+                out->smcInputCurrent_A = railI;
+            }
         }
 
         /* USB-C 对外供电通道：D1..D4 的电压 × 电流（PowerLens 同款做法） */

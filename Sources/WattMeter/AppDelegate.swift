@@ -78,6 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var tip = "WattMeter · 整机 \(PowerFormat.wattsWithUnit(reading.totalW)) · "
             + "电源 \(PowerFormat.wattsWithUnit(reading.adapterToLoadW)) · "
             + "电池 \(PowerFormat.wattsWithUnit(reading.batteryToLoadW))"
+        if let rails = reading.inputRailsText {
+            tip += " · 输入 \(rails)"
+        }
         if let cpu = reading.cpuTempC {
             tip += " · CPU \(String(format: "%.0f°C", cpu))"
         }

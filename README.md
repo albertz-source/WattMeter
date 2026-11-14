@@ -25,7 +25,7 @@ A native macOS menu-bar power monitor. It shows real-time system power, how much
 | Where the power comes from | A Sankey-style flow diagram (adapter / battery on the left, system in the middle, four branches on the right) plus an adapter-vs-battery share bar |
 | Visualisation | Flow diagram; stacked area chart (adapter vs battery, 1 / 5 / 15 min); line chart of total power and net battery power in the main window |
 
-Also included: adapter DC input and rated wattage, estimated wall power, battery percentage and time remaining, fan RPM, CPU / GPU / SSD / battery / platform temperatures, display backlight power, USB-C output power, and session energy (Wh).
+Also included: adapter DC input (with measured input voltage and current) and rated wattage, estimated wall power, battery percentage and time remaining, fan RPM, CPU / GPU / SSD / battery / platform temperatures, display backlight power, USB-C output power, and session energy (Wh).
 
 ---
 
@@ -35,6 +35,7 @@ Also included: adapter DC input and rated wattage, estimated wall power, battery
 | --- | --- | --- | --- |
 | Total system power | AppleSMC `PSTR` | sub-second | whole-system rail |
 | Adapter DC input | AppleSMC `PDTR`, `PD0R` | sub-second | `PD0R` exists on desktop Macs |
+| Input voltage / current | AppleSMC `VD0R` / `ID0R` | sub-second | measured rails; `PDTR` equals `VD0R × ID0R` |
 | Battery power | `AppleSmartBattery` voltage × amperage | ~1 s | sign normalised by charge state |
 | Battery state / % / time left | IOKit `IOPowerSources` | event-driven | |
 | Adapter rating & name | `AdapterDetails` | on plug/unplug | |

@@ -23,6 +23,7 @@ if CommandLine.arguments.contains("--selftest") {
 
     if let latest = store.latest {
         print("selftest OK: \(String(format: "%.1f", latest.totalW)) W, 来源=\(latest.source.label), 样本=\(store.history.count)")
+        print("  input: \(latest.inputRailsText ?? "—")")
         print("  fanRPM=\(latest.fanRPM.map { String(format: "%.0f", $0) } ?? "—")")
         print("  temps: CPU=\(latest.cpuTempC.map { String(format: "%.1f", $0) } ?? "—")"
               + " GPU=\(latest.gpuTempC.map { String(format: "%.1f", $0) } ?? "—")"

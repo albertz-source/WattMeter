@@ -71,6 +71,9 @@ public struct DemoGenerator {
         let batteryToLoad = max(0, load - adapterToLoad)
         let chargeW = max(0, adapterIn - load)
         let loss = adapterIn > 0 ? min(2.2, adapterIn * 0.055) : 0
+        // 模拟 19.5 V 的适配器：电流 = 输入功率 / 电压
+        let inputVoltage = 19.5
+        let inputCurrent = adapterIn > 0 ? adapterIn / inputVoltage : 0
 
         // 电量缓慢变化
         let soc = min(100, max(3, phase.soc + sin(t * 0.05) * 0.8))
@@ -109,6 +112,8 @@ public struct DemoGenerator {
             timeRemainingMinutes: phase.onAC ? nil : (phase.load > 20 ? 95 : 380),
             displayPowerW: safeDisplay,
             portPowerW: safePort,
+            inputVoltageV: adapterIn > 0 ? inputVoltage : nil,
+            inputCurrentA: adapterIn > 0 ? inputCurrent : nil,
             cpuTempC: cpuTemp,
             gpuTempC: gpuTemp,
             ssdTempC: ssdTemp,

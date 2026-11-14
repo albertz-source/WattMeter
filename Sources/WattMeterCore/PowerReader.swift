@@ -159,6 +159,17 @@ public final class PowerReader {
             remaining = raw.timeRemainingMinutes
         }
 
+        // 输入电压 / 电流：优先 SMC 的 VD0R / ID0R（实时），否则用遥测（约 20 秒）
+        var inputV: Double?
+        var inputA: Double?
+        if raw.smcHasInputRails != 0, raw.smcInputVoltage_V > 0.1 {
+            inputV = raw.smcInputVoltage_V
+            inputA = raw.smcInputCurrent_A >= 0 ? raw.smcInputCurrent_A : nil
+        } else if telemetry, raw.systemVoltageIn_mV > 500 {
+            inputV = raw.systemVoltageIn_mV / 1000.0
+            inputA = raw.systemCurrentIn_mA > 0 ? raw.systemCurrentIn_mA / 1000.0 : nil
+        }
+
         // 分项（笔记本机型可用）
         let displayW: Double? = raw.displayAvailable != 0 && raw.displayPower_W >= 0
             ? raw.displayPower_W : nil
@@ -189,6 +200,8 @@ public final class PowerReader {
             timeRemainingMinutes: remaining,
             displayPowerW: displayW,
             portPowerW: portW,
+            inputVoltageV: inputV,
+            inputCurrentA: inputA,
             cpuTempC: temp(raw.cpuTempC),
             gpuTempC: temp(raw.gpuTempC),
             ssdTempC: temp(raw.ssdTempC),

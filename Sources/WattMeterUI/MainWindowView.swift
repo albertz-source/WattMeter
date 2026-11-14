@@ -142,7 +142,7 @@ public struct MainWindowView: View {
         VStack(spacing: 12) {
             Card(title: "适配器") {
                 VStack(spacing: 1) {
-                    powerRow("powerplug.fill", "DC 输入", store.latest?.source == .telemetry ? "系统遥测" : "SMC 实时",
+                    powerRow("powerplug.fill", "DC 输入", dcInputCaption,
                              PowerFormat.watts(store.latest?.adapterInputW), "W", Palette.mint)
                     Divider().opacity(0.18)
                     powerRow("cable.connector", "额定功率", store.latest?.adapterName ?? "未报告",
@@ -208,6 +208,13 @@ public struct MainWindowView: View {
         case 3600: return "最近 1 小时"
         default: return "最近 15 分钟"
         }
+    }
+
+    private var dcInputCaption: String {
+        if let rails = store.latest?.inputRailsText {
+            return rails
+        }
+        return store.latest?.source == .telemetry ? "系统遥测" : "SMC 实时"
     }
 
     private func tempText(_ value: Double?) -> String {
