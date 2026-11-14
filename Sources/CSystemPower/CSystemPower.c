@@ -61,10 +61,21 @@ typedef struct {
     uint8_t    bytes[32];
 } SMCKeyData;
 
+#define SP_MAX_CPU_KEYS 48
+#define SP_MAX_GPU_KEYS 32
+#define SP_MAX_SSD_KEYS 24
+
 struct SPReader {
     io_service_t  smcService;
     io_connect_t  smcConnection;
     int           smcReady;
+    /* 温度键随机型不同，启动时枚举一次并缓存 */
+    char cpuKeys[SP_MAX_CPU_KEYS][5];
+    int  cpuKeyCount;
+    char gpuKeys[SP_MAX_GPU_KEYS][5];
+    int  gpuKeyCount;
+    char ssdKeys[SP_MAX_SSD_KEYS][5];
+    int  ssdKeyCount;
 };
 
 static kern_return_t smc_call(io_connect_t conn, SMCKeyData *in, SMCKeyData *out) {
@@ -177,6 +188,93 @@ static double smc_max_temp(io_connect_t conn, const char *const *keys, int count
         if (isnan(best) || v > best) best = v;
     }
     return best;
+}
+
+/* 读取 SMC 键总数（#KEY） */
+static int smc_key_count(io_connect_t conn) {
+    uint32_t type = 0;
+    uint8_t  size = 0;
+    if (smc_key_info(conn, "#KEY", &type, &size) != 0 || size != 4) return -1;
+    uint8_t raw[4] = {0};
+    if (smc_read_raw(conn, "#KEY", raw, 4) != 0) return -1;
+    uint32_t n = ((uint32_t)raw[0] << 24) | ((uint32_t)raw[1] << 16)
+               | ((uint32_t)raw[2] << 8) | raw[3];
+    if (n == 0 || n > 4096) return -1;
+    return (int)n;
+}
+
+/* 按索引取键名（GET_KEY_BY_INDEX） */
+static int smc_key_at(io_connect_t conn, int index, char out[5]) {
+    SMCKeyData in, outData;
+    memset(&in, 0, sizeof in);
+    memset(&outData, 0, sizeof outData);
+    in.data8 = 8;
+    in.data32 = (uint32_t)index;
+    if (smc_call(conn, &in, &outData) != KERN_SUCCESS || outData.result != 0) return -1;
+    uint32_t k = outData.key;
+    out[0] = (char)(k >> 24);
+    out[1] = (char)((k >> 16) & 0xff);
+    out[2] = (char)((k >> 8) & 0xff);
+    out[3] = (char)(k & 0xff);
+    out[4] = 0;
+    return 0;
+}
+
+static void add_temp_key(char (*list)[5], int *count, int max, const char *key) {
+    if (*count >= max) return;
+    memcpy(list[*count], key, 5);
+    (*count)++;
+}
+
+/* 启动时枚举 SMC 键，找出 CPU（Tp*）、GPU（Tg*）、SSD（TH0*）温度传感器。
+   不同机型后缀不一样（例如 M2 是 Tg0e/f/m/n/q/r），所以不能写死。 */
+static void discover_temp_keys(SPReader *r) {
+    if (r->smcReady) {
+        int n = smc_key_count(r->smcConnection);
+        for (int i = 0; i < n; i++) {
+            char k[5];
+            if (smc_key_at(r->smcConnection, i, k) != 0) continue;
+            if (k[0] != 'T') continue;
+            if (k[1] == 'p') {
+                add_temp_key(r->cpuKeys, &r->cpuKeyCount, SP_MAX_CPU_KEYS, k);
+            } else if (k[1] == 'g') {
+                add_temp_key(r->gpuKeys, &r->gpuKeyCount, SP_MAX_GPU_KEYS, k);
+            } else if (k[1] == 'H' && k[2] == '0') {
+                add_temp_key(r->ssdKeys, &r->ssdKeyCount, SP_MAX_SSD_KEYS, k);
+            }
+        }
+    }
+    /* 固定兜底：Intel 机型用大写 TC/TG，部分机型 SSD 键大小写不同 */
+    if (r->cpuKeyCount == 0) {
+        static const char *intel[] = {"TC0P", "TC0D", "TC0E", "TC0F", "TC0H"};
+        for (int i = 0; i < 5; i++) add_temp_key(r->cpuKeys, &r->cpuKeyCount, SP_MAX_CPU_KEYS, intel[i]);
+    }
+    if (r->gpuKeyCount == 0) {
+        static const char *intel[] = {"Tg0D", "Tg0B", "Tg0P", "Tg0V", "TG0P", "TG0D"};
+        for (int i = 0; i < 6; i++) add_temp_key(r->gpuKeys, &r->gpuKeyCount, SP_MAX_GPU_KEYS, intel[i]);
+    }
+    if (r->ssdKeyCount == 0) {
+        static const char *fixed[] = {"TH0x", "TH0a", "TH0b", "TH0c", "TH0d", "TH0e", "TH0f", "TH0P"};
+        for (int i = 0; i < 8; i++) add_temp_key(r->ssdKeys, &r->ssdKeyCount, SP_MAX_SSD_KEYS, fixed[i]);
+    }
+}
+
+static double max_temp_from_keys(io_connect_t conn, char keys[][5], int count) {
+    double best = NAN;
+    for (int i = 0; i < count; i++) {
+        double v = smc_read_temp(conn, keys[i]);
+        if (isnan(v)) continue;
+        if (isnan(best) || v > best) best = v;
+    }
+    return best;
+}
+
+static double first_temp_from_keys(io_connect_t conn, char keys[][5], int count) {
+    for (int i = 0; i < count; i++) {
+        double v = smc_read_temp(conn, keys[i]);
+        if (!isnan(v)) return v;
+    }
+    return NAN;
 }
 
 /* ------------------------------------------------------------------ */
@@ -405,6 +503,7 @@ SPReader *sp_reader_create(void) {
             IOObjectRelease(svc);
         }
     }
+    discover_temp_keys(reader);
     return reader;
 }
 
@@ -497,26 +596,15 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
 
         /* 温度：各组件分开读，读不到的保持 NaN */
         {
-            static const char *const cpuKeys[] = {
-                "Tp01", "Tp05", "Tp09", "Tp0D", "Tp0H", "Tp0L", "Tp0P", "Tp0T",
-                "Tp0V", "Tp0Z", "Tp0b", "Tp0f", "Tp0j", "Tp0n", "Tp0r", "Tp0v", "Tp0z"
-            };
-            static const char *const cpuIntelKeys[] = {"TC0P", "TC0D", "TC0E", "TC0F", "TC0H"};
-            static const char *const gpuKeys[] = {"Tg0D", "Tg0B", "Tg0P", "Tg0V", "TG0P", "TG0D"};
-            static const char *const ssdKeys[] = {
-                "TH0x", "TH0a", "TH0b", "TH0c", "TH0d", "TH0e", "TH0f", "TH0g",
-                "TH0h", "TH0i", "TH0j", "TH0k", "TH0l", "TH0m", "TH0n", "TH0o", "TH0p", "TH0P"
-            };
             static const char *const batteryKeys[] = {"TB0T", "TB1T", "TB2T"};
             static const char *const platformKeys[] = {"Ts0P", "Ts1P", "TsOP", "TA0P"};
 
-            double cpu = smc_max_temp(reader->smcConnection, cpuKeys, 17);
-            if (isnan(cpu)) {
-                cpu = smc_max_temp(reader->smcConnection, cpuIntelKeys, 5);
-            }
-            out->cpuTempC = cpu;
-            out->gpuTempC = smc_first_temp(reader->smcConnection, gpuKeys, 6);
-            out->ssdTempC = smc_first_temp(reader->smcConnection, ssdKeys, 18);
+            out->cpuTempC = max_temp_from_keys(reader->smcConnection,
+                                               reader->cpuKeys, reader->cpuKeyCount);
+            out->gpuTempC = max_temp_from_keys(reader->smcConnection,
+                                               reader->gpuKeys, reader->gpuKeyCount);
+            out->ssdTempC = first_temp_from_keys(reader->smcConnection,
+                                                 reader->ssdKeys, reader->ssdKeyCount);
             out->batteryTempC = smc_first_temp(reader->smcConnection, batteryKeys, 3);
             out->platformTempC = smc_first_temp(reader->smcConnection, platformKeys, 4);
         }

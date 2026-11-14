@@ -43,7 +43,7 @@
 | 风扇 | AppleSMC `F0Ac`、`F0Mn`、`F0Mx` | 亚秒级 | `flt` 或 `fpe2` 类型 |
 | 屏幕背光 | AppleSMC `PDBR` / `PBwo` / `PBLR` | 亚秒级 | 仅带内置屏的机型 |
 | USB-C 对外供电 | AppleSMC `D1..D4 JV×JI`，否则 `PowerOutDetails` | 亚秒级 | 排除充电输入通道 |
-| 组件温度 | AppleSMC `Tp*`（CPU）、`Tg0*`（GPU）、`TH0*`（SSD）、`TB0*`（电池）、`Ts0P`（平台） | 亚秒级 | 键随机型不同，读不到显示「—」 |
+| 组件温度 | AppleSMC `Tp*`（CPU）、`Tg*`（GPU）、`TH0*`（SSD）、`TB0*`（电池）、`Ts0P`（平台） | 亚秒级 | 启动时枚举 SMC 键自动发现，因为后缀随机型不同（例如 M2 是 `Tg0e/f/m/n/q/r` 而不是 `Tg0D`）；读不到显示「—」 |
 
 两条实践规则：
 
@@ -210,7 +210,7 @@ dist/WattMeter.app/Contents/MacOS/WattMeter --login-item enable   # 开启（dis
 4. 暂不支持历史持久化、CSV 导出、通知、登录项。
 5. 构建产物为 ad-hoc 签名，未公证。
 6. 未实现 IOReport 的子系统功率（CPU / GPU / ANE / DRAM）。
-7. 温度键随机型不同：部分 Mac 不暴露 GPU / 电池温度（台式机没有电池传感器），这些行显示「—」。
+7. 温度键随机型不同。应用会在启动时枚举 SMC 自动发现 `Tp*` / `Tg*` / `TH0*`，但部分 Mac 本身就没有 GPU 或电池传感器（台式机没有电池），这些行显示「—」。
 
 ---
 

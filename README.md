@@ -43,7 +43,7 @@ Also included: adapter DC input (with measured input voltage and current) and ra
 | Fan | AppleSMC `F0Ac`, `F0Mn`, `F0Mx` | sub-second | `flt` or `fpe2` payloads |
 | Display backlight | AppleSMC `PDBR` / `PBwo` / `PBLR` | sub-second | only on Macs with an internal display |
 | USB-C output | AppleSMC `D1..D4 JV×JI`, else `PowerOutDetails` | sub-second | charging input channel is excluded |
-| Component temperatures | AppleSMC `Tp*` (CPU), `Tg0*` (GPU), `TH0*` (SSD), `TB0*` (battery), `Ts0P` (platform) | sub-second | keys vary by model; unavailable components show “—” |
+| Component temperatures | AppleSMC `Tp*` (CPU), `Tg*` (GPU), `TH0*` (SSD), `TB0*` (battery), `Ts0P` (platform) | sub-second | the app enumerates SMC keys at launch, because suffixes differ per model (e.g. M2 exposes `Tg0e/f/m/n/q/r` instead of `Tg0D`); unavailable components show “—” |
 
 Two practical rules:
 
@@ -210,7 +210,7 @@ If `PSTR` / `PDTR` are missing on your model, the app falls back to `PowerTeleme
 4. No persistence, CSV export, notifications or login item yet.
 5. Builds are ad-hoc signed, not notarised.
 6. Sub-system power (CPU / GPU / ANE / DRAM) via IOReport is not implemented.
-7. Temperature keys differ between models: GPU and battery temperatures are not exposed on every Mac (desktop Macs have no battery sensor), and those rows then show “—”.
+7. Temperature keys differ between models. The app discovers `Tp*` / `Tg*` / `TH0*` keys by enumerating SMC at launch, but some Macs simply do not expose a GPU or battery sensor (desktop Macs have no battery); those rows then show “—”.
 
 ---
 
