@@ -32,6 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        if CommandLine.arguments.contains("--show-window") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.openMainWindow()
+            }
+        }
+
         if CommandLine.arguments.contains("--diag") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 self?.printDiagnostics()
@@ -145,12 +151,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown { popover.performClose(nil) }
 
         if mainWindow == nil {
-            let controller = NSHostingController(rootView: MainWindowView(store: store))
+            let controller = NSHostingController(rootView: MainWindowView(store: store, scrollable: true))
             let window = NSWindow(contentViewController: controller)
             window.title = "WattMeter"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 1020, height: 740))
-            window.minSize = NSSize(width: 960, height: 680)
+            // 内容实测高度约 820pt；按真实内容开窗，避免底部被裁掉。
+            // 用户手动缩小时由 MainWindowView 的 ScrollView 兜底。
+            window.setContentSize(NSSize(width: 1020, height: 820))
+            window.minSize = NSSize(width: 960, height: 600)
             window.isReleasedWhenClosed = false
             window.tabbingMode = .disallowed
             window.appearance = NSAppearance(named: .darkAqua)
@@ -160,6 +168,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.activate(ignoringOtherApps: true)
         mainWindow?.makeKeyAndOrderFront(nil)
+
+        if CommandLine.arguments.contains("--show-window"), let window = mainWindow {
+            let screen = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+            let report = "frame=\(window.frame) content=\(window.contentLayoutRect) screenVisible=\(screen)"
+            FileHandle.standardOutput.write(Data((report + "\n").utf8))
+            try? report.write(toFile: "/tmp/wattmeter-window.txt", atomically: true, encoding: .utf8)
+        }
     }
 
     @objc private func quit() {

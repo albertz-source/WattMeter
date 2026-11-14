@@ -132,12 +132,13 @@ The visual language is inspired by [PowerLens](https://github.com/kinghhhin-desi
 
 | Element | Detail |
 | --- | --- |
-| Panel | 400 × 644 pt dark frosted glass (`NSVisualEffectView` with `.popover` material, behind-window, darkAqua) |
+| Panel | 400 × 666 pt dark frosted glass (`NSVisualEffectView` with `.popover` material, behind-window, darkAqua) |
 | Accents | mint `#6EE0C2` (power), amber `#F5C273` (battery), blue `#7DB0FA` (system), purple `#BA9CF5` (adapter/ports) |
 | Type | SF Rounded; 31 pt light primary readout, 19 pt medium row values, 9–10 pt captions |
 | Flow diagram | 364 × 180: source on the left, Mac in the middle, four branches on the right (system / display / ports / battery). Rounded bezier links with gradient, glow and dots flowing **from source to load**. Link width is fixed at 14 pt so the diagram does not jitter when readings change |
 | Temperatures | CPU / GPU / SSD / battery chips in the panel; a full temperature card in the main window. Values turn amber above 65 °C and red above 80 °C |
 | Charts | Stacked area of adapter vs battery, plus a total/net-battery line chart in the main window |
+| Main window | 1020 × 820 pt (scrollable if the user shrinks it): flow diagram, stacked area chart, line chart, and adapter / battery / temperature cards |
 | Menu bar | Monospaced digits, width auto-fitted, detailed tooltip, single-instance guard |
 
 Charging, discharging, battery standby and no-battery desktops each get a different diagram layout; branches without telemetry are dimmed instead of being hidden.

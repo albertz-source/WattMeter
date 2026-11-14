@@ -4,14 +4,40 @@ import WattMeterCore
 /// 主窗口：更大的流向图与图表，以及适配器 / 电池 / 统计侧栏。
 public struct MainWindowView: View {
     @ObservedObject private var store: PowerStore
+    /// 窗口里使用可滚动容器；离屏预览时关闭（ScrollView 无法被 ImageRenderer 渲染）
+    private let scrollable: Bool
 
-    public init(store: PowerStore) {
+    public init(store: PowerStore, scrollable: Bool = false) {
         self.store = store
+        self.scrollable = scrollable
     }
 
     private var samples: [PowerReading] { store.readings(in: store.windowSeconds) }
 
+    @ViewBuilder
     public var body: some View {
+        if scrollable {
+            ScrollView(.vertical, showsIndicators: false) {
+                content
+                    .padding(18)
+                    .frame(minWidth: 980)
+            }
+            .background(PanelBackground())
+            .environment(\.colorScheme, .dark)
+            .preferredColorScheme(.dark)
+            .foregroundStyle(.white.opacity(0.9))
+        } else {
+            content
+                .padding(18)
+                .frame(minWidth: 980)
+                .background(PanelBackground())
+                .environment(\.colorScheme, .dark)
+                .preferredColorScheme(.dark)
+                .foregroundStyle(.white.opacity(0.9))
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
 
@@ -35,11 +61,11 @@ public struct MainWindowView: View {
                                     onSelect: { store.setWindow($0) }
                                 )
                             }
-                            SourceAreaChart(readings: samples, height: 190)
+                            SourceAreaChart(readings: samples, height: 168)
                         }
                     }
                     Card(title: "整机功耗 / 电池净功率") {
-                        PowerLineChart(readings: samples, height: 140)
+                        PowerLineChart(readings: samples, height: 116)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -48,16 +74,10 @@ public struct MainWindowView: View {
                     .frame(width: 300)
             }
         }
-        .padding(18)
-        .frame(minWidth: 980, minHeight: 720)
-        .background(PanelBackground())
-        .environment(\.colorScheme, .dark)
-        .preferredColorScheme(.dark)
-        .foregroundStyle(.white.opacity(0.9))
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 7) {
@@ -77,7 +97,7 @@ public struct MainWindowView: View {
                 Spacer()
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(PowerFormat.watts(store.latest?.totalW))
-                        .font(.system(size: 44, weight: .light, design: .rounded))
+                        .font(.system(size: 38, weight: .light, design: .rounded))
                         .monospacedDigit()
                     Text("W")
                         .font(.system(size: 14))
@@ -103,6 +123,10 @@ public struct MainWindowView: View {
                 }
             }
             .font(.system(size: 10))
+
+            Text("峰值 \(PowerFormat.wattsWithUnit(store.peakW)) · 平均 \(PowerFormat.wattsWithUnit(store.averageW)) · 累计 \(String(format: "%.2f", store.sessionEnergyWh)) Wh · 每 1 秒采样")
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.35))
         }
     }
 
@@ -132,19 +156,6 @@ public struct MainWindowView: View {
                 }
             }
 
-            Card(title: "分项功率") {
-                VStack(spacing: 1) {
-                    powerRow("cpu", "系统", "总功率扣除屏幕与接口",
-                             PowerFormat.watts(store.latest?.systemComponentW), "W", Palette.blue)
-                    Divider().opacity(0.18)
-                    powerRow("display", "屏幕", store.latest?.displayPowerW == nil ? "本机无内置屏幕数据" : "背光功率（SMC）",
-                             PowerFormat.watts(store.latest?.displayPowerW), "W", Palette.purple)
-                    Divider().opacity(0.18)
-                    powerRow("cable.connector", "接口", store.latest?.portPowerW == nil ? "系统未回报接口功率" : "USB-C 对外供电",
-                             PowerFormat.watts(store.latest?.portPowerW), "W", Palette.muted)
-                }
-            }
-
             Card(title: "电池") {
                 VStack(spacing: 1) {
                     powerRow("battery.100percent", "状态", store.latest?.batteryStateText ?? "—",
@@ -160,7 +171,7 @@ public struct MainWindowView: View {
                 }
             }
 
-            Card(title: "温度") {
+            Card(title: "温度与散热") {
                 VStack(spacing: 1) {
                     powerRow("cpu", "CPU", "Tp* 集群传感器最高", tempText(store.latest?.cpuTempC), "°C", Palette.blue)
                     Divider().opacity(0.18)
@@ -171,22 +182,8 @@ public struct MainWindowView: View {
                     powerRow("battery.100percent", "电池", "TB0T", tempText(store.latest?.batteryTempC), "°C", Palette.amber)
                     Divider().opacity(0.18)
                     powerRow("square.stack.3d.up", "平台", "Ts0P", tempText(store.latest?.platformTempC), "°C", Palette.muted)
-                }
-            }
-
-            Card(title: "统计") {
-                VStack(spacing: 1) {
-                    powerRow("arrow.up", "峰值", "本次会话",
-                             PowerFormat.watts(store.peakW), "W", Palette.mint)
                     Divider().opacity(0.18)
-                    powerRow("equal", "平均", "本次会话",
-                             PowerFormat.watts(store.averageW), "W", Palette.blue)
-                    Divider().opacity(0.18)
-                    powerRow("gauge", "累计电量", "∫ 功率 dt",
-                             String(format: "%.2f", store.sessionEnergyWh), "Wh", Palette.purple)
-                    Divider().opacity(0.18)
-                    powerRow("fan", "风扇转速", "SMC F0Ac",
-                             store.latest?.fanText ?? "—", "RPM", Palette.blue)
+                    powerRow("fan", "风扇", "SMC F0Ac", store.latest?.fanText ?? "—", "RPM", Palette.blue)
                 }
             }
 
