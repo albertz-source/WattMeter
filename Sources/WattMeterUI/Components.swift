@@ -409,3 +409,77 @@ public struct ChartLegend: View {
         }
     }
 }
+
+
+// MARK: - 温度
+
+public struct TempChip: View {
+    let label: String
+    let icon: String
+    let celsius: Double?
+    let tint: Color
+
+    public init(label: String, icon: String, celsius: Double?, tint: Color) {
+        self.label = label
+        self.icon = icon
+        self.celsius = celsius
+        self.tint = tint
+    }
+
+    /// 温度越高颜色越警示
+    private var accent: Color {
+        guard let celsius else { return .white.opacity(0.35) }
+        if celsius >= 80 { return Color(red: 0.96, green: 0.45, blue: 0.38) }
+        if celsius >= 65 { return Palette.amber }
+        return tint
+    }
+
+    public var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+                .foregroundStyle(accent.opacity(0.9))
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.5))
+            Text(celsius.map { String(format: "%.0f°", $0) } ?? "—")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.9))
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(accent.opacity(0.10)))
+    }
+}
+
+/// 面板里的紧凑温度条：只显示读得到的组件
+public struct TempStrip: View {
+    let reading: PowerReading?
+
+    public init(reading: PowerReading?) {
+        self.reading = reading
+    }
+
+    private var items: [(String, String, Double?, Color)] {
+        guard let r = reading else { return [] }
+        let all: [(String, String, Double?, Color)] = [
+            ("CPU", "cpu", r.cpuTempC, Palette.blue),
+            ("GPU", "display", r.gpuTempC, Palette.purple),
+            ("SSD", "internaldrive", r.ssdTempC, Palette.mint),
+            ("BAT", "battery.100percent", r.batteryTempC, Palette.amber),
+        ]
+        return all.filter { $0.2 != nil }
+    }
+
+    public var body: some View {
+        if !items.isEmpty {
+            HStack(spacing: 6) {
+                ForEach(items, id: \.0) { item in
+                    TempChip(label: item.0, icon: item.1, celsius: item.2, tint: item.3)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+}

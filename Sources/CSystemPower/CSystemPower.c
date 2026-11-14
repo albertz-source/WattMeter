@@ -14,6 +14,7 @@
 #include <mach/mach.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 /* ------------------------------------------------------------------ */
 /* AppleSMC                                                            */
@@ -148,6 +149,34 @@ static int smc_read_number(io_connect_t conn, const char *key, double *value) {
     }
     if (!(*value == *value)) return -5; /* NaN */
     return 0;
+}
+
+/* 读一个温度键；不可读或超出合理范围返回 NAN */
+static double smc_read_temp(io_connect_t conn, const char *key) {
+    double v = 0;
+    if (smc_read_number(conn, key, &v) != 0) return NAN;
+    if (!(v > -20.0 && v < 150.0)) return NAN;
+    return v;
+}
+
+/* 依次尝试多个键，返回第一个可读的温度 */
+static double smc_first_temp(io_connect_t conn, const char *const *keys, int count) {
+    for (int i = 0; i < count; i++) {
+        double v = smc_read_temp(conn, keys[i]);
+        if (!isnan(v)) return v;
+    }
+    return NAN;
+}
+
+/* 取多个键中的最高温度 */
+static double smc_max_temp(io_connect_t conn, const char *const *keys, int count) {
+    double best = NAN;
+    for (int i = 0; i < count; i++) {
+        double v = smc_read_temp(conn, keys[i]);
+        if (isnan(v)) continue;
+        if (isnan(best) || v > best) best = v;
+    }
+    return best;
 }
 
 /* ------------------------------------------------------------------ */
@@ -402,6 +431,11 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
     if (!reader || !out) return -1;
 
     memset(out, 0, sizeof(SPReading));
+    out->cpuTempC = NAN;
+    out->gpuTempC = NAN;
+    out->ssdTempC = NAN;
+    out->batteryTempC = NAN;
+    out->platformTempC = NAN;
     out->socPercent = -1.0;
     out->timeRemainingMinutes = -1.0;
     snprintf(out->powerSourceState, sizeof out->powerSourceState, "%s", "Unknown");
@@ -444,6 +478,32 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
         if (railsAnswered) {
             out->portTelemetryAvailable = 1;
             out->portPower_W = railSum;
+        }
+
+        /* 温度：各组件分开读，读不到的保持 NaN */
+        {
+            static const char *const cpuKeys[] = {
+                "Tp01", "Tp05", "Tp09", "Tp0D", "Tp0H", "Tp0L", "Tp0P", "Tp0T",
+                "Tp0V", "Tp0Z", "Tp0b", "Tp0f", "Tp0j", "Tp0n", "Tp0r", "Tp0v", "Tp0z"
+            };
+            static const char *const cpuIntelKeys[] = {"TC0P", "TC0D", "TC0E", "TC0F", "TC0H"};
+            static const char *const gpuKeys[] = {"Tg0D", "Tg0B", "Tg0P", "Tg0V", "TG0P", "TG0D"};
+            static const char *const ssdKeys[] = {
+                "TH0x", "TH0a", "TH0b", "TH0c", "TH0d", "TH0e", "TH0f", "TH0g",
+                "TH0h", "TH0i", "TH0j", "TH0k", "TH0l", "TH0m", "TH0n", "TH0o", "TH0p", "TH0P"
+            };
+            static const char *const batteryKeys[] = {"TB0T", "TB1T", "TB2T"};
+            static const char *const platformKeys[] = {"Ts0P", "Ts1P", "TsOP", "TA0P"};
+
+            double cpu = smc_max_temp(reader->smcConnection, cpuKeys, 17);
+            if (isnan(cpu)) {
+                cpu = smc_max_temp(reader->smcConnection, cpuIntelKeys, 5);
+            }
+            out->cpuTempC = cpu;
+            out->gpuTempC = smc_first_temp(reader->smcConnection, gpuKeys, 6);
+            out->ssdTempC = smc_first_temp(reader->smcConnection, ssdKeys, 18);
+            out->batteryTempC = smc_first_temp(reader->smcConnection, batteryKeys, 3);
+            out->platformTempC = smc_first_temp(reader->smcConnection, platformKeys, 4);
         }
 
         /* 风扇转速：F0Ac = 实际转速，F0Mn / F0Mx = 最小 / 最大 */

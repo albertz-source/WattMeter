@@ -163,6 +163,9 @@ public final class PowerReader {
         let displayW: Double? = raw.displayAvailable != 0 && raw.displayPower_W >= 0
             ? raw.displayPower_W : nil
         let portW: Double? = raw.portTelemetryAvailable != 0 ? raw.portPower_W : nil
+        func temp(_ value: Double) -> Double? {
+            value.isFinite && value > -20 && value < 150 ? value : nil
+        }
         let fanW: Double? = raw.fanAvailable != 0 ? raw.fanRPM : nil
         let fanMin: Double? = raw.fanAvailable != 0 && raw.fanMinRPM > 0 ? raw.fanMinRPM : nil
         let fanMax: Double? = raw.fanAvailable != 0 && raw.fanMaxRPM > 0 ? raw.fanMaxRPM : nil
@@ -186,6 +189,11 @@ public final class PowerReader {
             timeRemainingMinutes: remaining,
             displayPowerW: displayW,
             portPowerW: portW,
+            cpuTempC: temp(raw.cpuTempC),
+            gpuTempC: temp(raw.gpuTempC),
+            ssdTempC: temp(raw.ssdTempC),
+            batteryTempC: temp(raw.batteryTempC),
+            platformTempC: temp(raw.platformTempC),
             fanRPM: fanW,
             fanMinRPM: fanMin,
             fanMaxRPM: fanMax,

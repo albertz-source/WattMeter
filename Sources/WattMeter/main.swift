@@ -18,6 +18,11 @@ if CommandLine.arguments.contains("--selftest") {
     if let latest = store.latest {
         print("selftest OK: \(String(format: "%.1f", latest.totalW)) W, 来源=\(latest.source.label), 样本=\(store.history.count)")
         print("  fanRPM=\(latest.fanRPM.map { String(format: "%.0f", $0) } ?? "—")")
+        print("  temps: CPU=\(latest.cpuTempC.map { String(format: "%.1f", $0) } ?? "—")"
+              + " GPU=\(latest.gpuTempC.map { String(format: "%.1f", $0) } ?? "—")"
+              + " SSD=\(latest.ssdTempC.map { String(format: "%.1f", $0) } ?? "—")"
+              + " BAT=\(latest.batteryTempC.map { String(format: "%.1f", $0) } ?? "—")"
+              + " PLATFORM=\(latest.platformTempC.map { String(format: "%.1f", $0) } ?? "—")")
         print(String(format: "  system=%.2f W  display=%.2f W  ports=%.2f W",
                      latest.systemComponentW,
                      latest.displayPowerW ?? -1,

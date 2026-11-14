@@ -47,6 +47,13 @@ typedef struct SPReading {
     double  timeRemainingMinutes; // <0 表示未知/不限
     char    powerSourceState[32]; // "AC Power" / "Battery Power" / "Unknown"
 
+    /* ---- 温度（°C，读不到为 NaN） ---- */
+    double  cpuTempC;      // Tp* 集群传感器取最大；Intel 回退 TC0P/TC0D
+    double  gpuTempC;      // Tg0D / Tg0B / Tg0P，Intel TG0P
+    double  ssdTempC;      // TH0x / TH0a..TH0p
+    double  batteryTempC;  // TB0T / TB1T
+    double  platformTempC; // Ts0P / Ts1P / TsOP
+
     /* ---- 风扇（F0Ac / F0Mn / F0Mx） ---- */
     int32_t fanAvailable;
     double  fanRPM;

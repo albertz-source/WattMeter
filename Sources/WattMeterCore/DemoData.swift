@@ -82,6 +82,12 @@ public struct DemoGenerator {
         let safePort = min(port, max(0, load - safeDisplay - 0.6))
         // 风扇：随负载线性上升，叠加一点波动（模拟 M 系列机型）
         let fan = min(4900, max(1700, 1700 + load * 62 + sin(t * 0.7) * 25))
+        // 温度：CPU 随负载明显上升，SSD/电池/平台波动较小
+        let cpuTemp = min(92, 38 + load * 0.85 + sin(t * 0.5) * 1.2)
+        let gpuTemp = min(88, 35 + load * 0.55 + sin(t * 0.37) * 1.0)
+        let ssdTemp = 34 + load * 0.06
+        let batteryTemp = 29 + load * 0.12
+        let platformTemp = 36 + load * 0.22
 
         return PowerReading(
             timestamp: now,
@@ -103,6 +109,11 @@ public struct DemoGenerator {
             timeRemainingMinutes: phase.onAC ? nil : (phase.load > 20 ? 95 : 380),
             displayPowerW: safeDisplay,
             portPowerW: safePort,
+            cpuTempC: cpuTemp,
+            gpuTempC: gpuTemp,
+            ssdTempC: ssdTemp,
+            batteryTempC: batteryTemp,
+            platformTempC: platformTemp,
             fanRPM: fan,
             fanMinRPM: 1700,
             fanMaxRPM: 4900,

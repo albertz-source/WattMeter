@@ -22,6 +22,7 @@ public struct DashboardView: View {
             PowerHeader(reading: store.latest)
             FlowDiagram(reading: store.latest)
             SourceSplitBar(reading: store.latest)
+            TempStrip(reading: store.latest)
             trendCard
             rowsCard
             footerBar

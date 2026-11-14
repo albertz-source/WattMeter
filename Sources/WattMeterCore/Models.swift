@@ -58,6 +58,13 @@ public struct PowerReading: Identifiable, Sendable {
     /// 对外供电接口功率（PowerOutDetails 汇总，部分机型可读）
     public let portPowerW: Double?
 
+    /// 组件温度（℃，读不到为 nil）
+    public let cpuTempC: Double?
+    public let gpuTempC: Double?
+    public let ssdTempC: Double?
+    public let batteryTempC: Double?
+    public let platformTempC: Double?
+
     /// 风扇实际转速（RPM，SMC F0Ac）
     public let fanRPM: Double?
     /// 风扇转速范围（RPM，SMC F0Mn / F0Mx）
@@ -83,6 +90,19 @@ public struct PowerReading: Identifiable, Sendable {
     /// 扣掉已知分项后的「系统」功率（CPU/内存/其他）
     public var systemComponentW: Double {
         max(0, totalW - (displayPowerW ?? 0) - (portPowerW ?? 0))
+    }
+
+    /// 最高组件温度（用于菜单栏 tooltip / 概览）
+    public var hottestTempC: Double? {
+        [cpuTempC, gpuTempC, ssdTempC, batteryTempC, platformTempC]
+            .compactMap { $0 }
+            .max()
+    }
+
+    /// 温度文案
+    public static func temperatureText(_ celsius: Double?) -> String {
+        guard let celsius else { return "—" }
+        return String(format: "%.0f°C", celsius)
     }
 
     /// 风扇转速文案
@@ -129,6 +149,11 @@ public struct PowerReading: Identifiable, Sendable {
         timeRemainingMinutes: Double?,
         displayPowerW: Double? = nil,
         portPowerW: Double? = nil,
+        cpuTempC: Double? = nil,
+        gpuTempC: Double? = nil,
+        ssdTempC: Double? = nil,
+        batteryTempC: Double? = nil,
+        platformTempC: Double? = nil,
         fanRPM: Double? = nil,
         fanMinRPM: Double? = nil,
         fanMaxRPM: Double? = nil,
@@ -153,6 +178,11 @@ public struct PowerReading: Identifiable, Sendable {
         self.timeRemainingMinutes = timeRemainingMinutes
         self.displayPowerW = displayPowerW
         self.portPowerW = portPowerW
+        self.cpuTempC = cpuTempC
+        self.gpuTempC = gpuTempC
+        self.ssdTempC = ssdTempC
+        self.batteryTempC = batteryTempC
+        self.platformTempC = platformTempC
         self.fanRPM = fanRPM
         self.fanMinRPM = fanMinRPM
         self.fanMaxRPM = fanMaxRPM

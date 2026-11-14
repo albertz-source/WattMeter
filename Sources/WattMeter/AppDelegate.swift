@@ -68,9 +68,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 按文字宽度自适应，避免菜单栏里出现过多空白
         let width = (title as NSString).size(withAttributes: [.font: button.font ?? NSFont.systemFont(ofSize: 11)]).width
         statusItem.length = ceil(width) + 6
-        button.toolTip = "WattMeter · 整机 \(PowerFormat.wattsWithUnit(reading.totalW)) · "
+        var tip = "WattMeter · 整机 \(PowerFormat.wattsWithUnit(reading.totalW)) · "
             + "电源 \(PowerFormat.wattsWithUnit(reading.adapterToLoadW)) · "
             + "电池 \(PowerFormat.wattsWithUnit(reading.batteryToLoadW))"
+        if let cpu = reading.cpuTempC {
+            tip += " · CPU \(String(format: "%.0f°C", cpu))"
+        }
+        if let fan = reading.fanRPM {
+            tip += " · 风扇 \(String(format: "%.0f RPM", fan))"
+        }
+        button.toolTip = tip
     }
 
     @objc private func statusItemClicked() {
@@ -109,13 +116,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onQuit: { NSApp.terminate(nil) }
         )
         let controller = NSHostingController(rootView: root)
-        controller.preferredContentSize = NSSize(width: 400, height: 644)
+        controller.preferredContentSize = NSSize(width: 400, height: 666)
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentSize = NSSize(width: 400, height: 644)
+        popover.contentSize = NSSize(width: 400, height: 666)
         popover.contentViewController = controller
         self.popover = popover
     }

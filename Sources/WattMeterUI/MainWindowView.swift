@@ -160,6 +160,20 @@ public struct MainWindowView: View {
                 }
             }
 
+            Card(title: "温度") {
+                VStack(spacing: 1) {
+                    powerRow("cpu", "CPU", "Tp* 集群传感器最高", tempText(store.latest?.cpuTempC), "°C", Palette.blue)
+                    Divider().opacity(0.18)
+                    powerRow("display", "GPU", "Tg0D / Tg0B", tempText(store.latest?.gpuTempC), "°C", Palette.purple)
+                    Divider().opacity(0.18)
+                    powerRow("internaldrive", "SSD", "TH0x", tempText(store.latest?.ssdTempC), "°C", Palette.mint)
+                    Divider().opacity(0.18)
+                    powerRow("battery.100percent", "电池", "TB0T", tempText(store.latest?.batteryTempC), "°C", Palette.amber)
+                    Divider().opacity(0.18)
+                    powerRow("square.stack.3d.up", "平台", "Ts0P", tempText(store.latest?.platformTempC), "°C", Palette.muted)
+                }
+            }
+
             Card(title: "统计") {
                 VStack(spacing: 1) {
                     powerRow("arrow.up", "峰值", "本次会话",
@@ -197,6 +211,11 @@ public struct MainWindowView: View {
         case 3600: return "最近 1 小时"
         default: return "最近 15 分钟"
         }
+    }
+
+    private func tempText(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f", value)
     }
 
     private func powerRow(_ icon: String, _ title: String, _ caption: String,

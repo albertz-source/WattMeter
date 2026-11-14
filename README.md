@@ -24,7 +24,7 @@ A native macOS menu-bar power monitor. It shows real-time system power, how much
 | Where the power comes from | A Sankey-style flow diagram (adapter / battery on the left, system in the middle, four branches on the right) plus an adapter-vs-battery share bar |
 | Visualisation | Flow diagram; stacked area chart (adapter vs battery, 1 / 5 / 15 min); line chart of total power and net battery power in the main window |
 
-Also included: adapter DC input and rated wattage, estimated wall power, battery percentage and time remaining, fan RPM, display backlight power, USB-C output power, and session energy (Wh).
+Also included: adapter DC input and rated wattage, estimated wall power, battery percentage and time remaining, fan RPM, CPU / GPU / SSD / battery / platform temperatures, display backlight power, USB-C output power, and session energy (Wh).
 
 ---
 
@@ -41,6 +41,7 @@ Also included: adapter DC input and rated wattage, estimated wall power, battery
 | Fan | AppleSMC `F0Ac`, `F0Mn`, `F0Mx` | sub-second | `flt` or `fpe2` payloads |
 | Display backlight | AppleSMC `PDBR` / `PBwo` / `PBLR` | sub-second | only on Macs with an internal display |
 | USB-C output | AppleSMC `D1..D4 JV×JI`, else `PowerOutDetails` | sub-second | charging input channel is excluded |
+| Component temperatures | AppleSMC `Tp*` (CPU), `Tg0*` (GPU), `TH0*` (SSD), `TB0*` (battery), `Ts0P` (platform) | sub-second | keys vary by model; unavailable components show “—” |
 
 Two practical rules:
 
@@ -135,6 +136,7 @@ The visual language is inspired by [PowerLens](https://github.com/kinghhhin-desi
 | Accents | mint `#6EE0C2` (power), amber `#F5C273` (battery), blue `#7DB0FA` (system), purple `#BA9CF5` (adapter/ports) |
 | Type | SF Rounded; 31 pt light primary readout, 19 pt medium row values, 9–10 pt captions |
 | Flow diagram | 364 × 180: source on the left, Mac in the middle, four branches on the right (system / display / ports / battery). Rounded bezier links with gradient, glow and dots flowing **from source to load**. Link width is fixed at 14 pt so the diagram does not jitter when readings change |
+| Temperatures | CPU / GPU / SSD / battery chips in the panel; a full temperature card in the main window. Values turn amber above 65 °C and red above 80 °C |
 | Charts | Stacked area of adapter vs battery, plus a total/net-battery line chart in the main window |
 | Menu bar | Monospaced digits, width auto-fitted, detailed tooltip, single-instance guard |
 
@@ -202,6 +204,7 @@ If `PSTR` / `PDTR` are missing on your model, the app falls back to `PowerTeleme
 4. No persistence, CSV export, notifications or login item yet.
 5. Builds are ad-hoc signed, not notarised.
 6. Sub-system power (CPU / GPU / ANE / DRAM) via IOReport is not implemented.
+7. Temperature keys differ between models: GPU and battery temperatures are not exposed on every Mac (desktop Macs have no battery sensor), and those rows then show “—”.
 
 ---
 
