@@ -136,6 +136,7 @@ public struct MainWindowView: View {
     private var stateColor: Color {
         guard let latest = store.latest else { return Palette.muted }
         if !latest.hasBattery { return Palette.mint }
+        if latest.isHybrid { return Palette.amber }
         if latest.isCharging { return Palette.charge }
         if latest.onAC { return Palette.mint }
         return Palette.amber

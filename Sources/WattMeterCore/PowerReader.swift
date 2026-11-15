@@ -88,43 +88,11 @@ public final class PowerReader {
 
         // ── 功率分流 ────────────────────────────────────────────────
         let load = systemW ?? 0
-        var adapterToLoad = 0.0
-        var batteryToLoad = 0.0
-        var chargeW = 0.0
-
-        if let input = adapterInW {
-            adapterToLoad = min(input, load)
-            batteryToLoad = max(0, load - input)
-            chargeW = max(0, input - load)
-        } else if onAC || !hasBattery {
-            adapterToLoad = load
-        } else {
-            batteryToLoad = load
-        }
-
-        // 电池模式但没有拆分数据时，把负载全部算作电池供电
-        if !onAC, hasBattery, batteryToLoad == 0, adapterToLoad > 0 {
-            batteryToLoad = adapterToLoad
-            adapterToLoad = 0
-        }
-
-        // 台式机没有电池：全部负载来自电源。
-        // （PSTR 比 PDTR 慢一个采样周期，直接相减会凭空出现 0.x W 的“电池供电”）
-        if !hasBattery {
-            adapterToLoad = load
-            batteryToLoad = 0
-            chargeW = 0
-        }
-
-        //  Attribution deadband（有电池、接着电源）：
-        // 采样相位差造成的 ±0.7 W 抖动不要显示成电池在供电/充电。
-        if hasBattery, onAC, batteryToLoad < 0.7 {
-            adapterToLoad = load
-            batteryToLoad = 0
-        }
-        if hasBattery, onAC, chargeW < 0.7 {
-            chargeW = 0
-        }
+        let split = Self.split(input: adapterInW, load: load,
+                               hasBattery: hasBattery, onAC: onAC)
+        let adapterToLoad = split.adapterToLoad
+        let batteryToLoad = split.batteryToLoad
+        let chargeW = split.charge
 
         // ── 墙插估算 ────────────────────────────────────────────────
         var wallW: Double?
@@ -212,6 +180,65 @@ public final class PowerReader {
             fanMaxRPM: fanMax,
             source: dataSource
         )
+    }
+
+    /// 供电源分流结果。
+    public struct PowerSplit: Sendable, Equatable {
+        public let adapterToLoad: Double
+        public let batteryToLoad: Double
+        public let charge: Double
+    }
+
+    /// 把「输入功率 / 系统负载 / 电池状态」拆成三个去向：
+    /// - `adapterToLoad`：电源供给负载的部分
+    /// - `batteryToLoad`：电池补足负载的部分（混合供电时 > 0）
+    /// - `charge`：电源给电池充电的部分
+    ///
+    /// 关键规则：
+    /// 1. 弱充电器 + 高负载时 `load > input`，电池会参与供电（混合供电）；
+    /// 2. 台式机没有电池，全部来自电源；
+    /// 3. 有电池且接着电源时用 0.7 W 死区，避免采样相位差造成的抖动。
+    public static func split(input: Double?, load: Double,
+                             hasBattery: Bool, onAC: Bool) -> PowerSplit {
+        var adapterToLoad = 0.0
+        var batteryToLoad = 0.0
+        var charge = 0.0
+
+        if let input, input > 0.05 {
+            adapterToLoad = min(input, load)
+            batteryToLoad = max(0, load - input)
+            charge = max(0, input - load)
+        } else if onAC || !hasBattery {
+            adapterToLoad = load
+        } else {
+            batteryToLoad = load
+        }
+
+        // 电池模式但没有拆分数据时，把负载全部算作电池供电
+        if !onAC, hasBattery, batteryToLoad == 0, adapterToLoad > 0 {
+            batteryToLoad = adapterToLoad
+            adapterToLoad = 0
+        }
+
+        // 台式机没有电池：全部负载来自电源
+        if !hasBattery {
+            adapterToLoad = load
+            batteryToLoad = 0
+            charge = 0
+        }
+
+        // 采样相位差死区
+        if hasBattery, onAC, batteryToLoad < 0.7 {
+            adapterToLoad = load
+            batteryToLoad = 0
+        }
+        if hasBattery, onAC, charge < 0.7 {
+            charge = 0
+        }
+
+        return PowerSplit(adapterToLoad: adapterToLoad,
+                          batteryToLoad: batteryToLoad,
+                          charge: charge)
     }
 
     /// 读取任意 SMC flt 键（扩展/调试用），单位通常为 W。

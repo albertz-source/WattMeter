@@ -124,9 +124,15 @@ public struct PowerReading: Identifiable, Sendable {
         return String(format: "%.0f", fanRPM)
     }
 
+    /// 是否处于「电源 + 电池」混合供电（弱充电器无法单独满足负载，电池补足）
+    public var isHybrid: Bool {
+        hasBattery && onAC && batteryToLoadW > 0.5
+    }
+
     /// 电池状态文案
     public var batteryStateText: String {
         guard hasBattery else { return "无内置电池" }
+        if isHybrid { return "混合供电" }
         if isCharging { return "充电中" }
         if onAC {
             return isCharged ? "已充满" : "外接电源"

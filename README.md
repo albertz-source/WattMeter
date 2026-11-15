@@ -28,6 +28,26 @@ Also included: adapter DC input (with measured input voltage and current) and ra
 
 ---
 
+### Hybrid power (weak charger + high load)
+
+When the adapter cannot cover the load — a 45 W charger on a 16-inch MacBook at full tilt, for
+example — macOS draws the difference from the battery. The diagram then shows **two sources on the
+left**: the adapter on top, the battery below, and two ribbons converging into the machine. The
+status pill reads “Hybrid power”, the source bar splits adapter/battery, and the charging branch on
+the right disappears (the battery is supplying, not charging).
+
+![hybrid](docs/preview-panel-hybrid.png)
+
+The split is a pure function (`PowerReader.split`) that is covered by `wattprobe --split-test`:
+
+```
+adapter → load = min(input, load)
+battery → load = max(0, load - input)
+charging       = max(0, input - load)
+```
+
+A 0.7 W dead band prevents sampling skew from being shown as battery supply.
+
 ## 2. Data sources
 
 | Source | API / keys | Typical refresh | Notes |
@@ -162,7 +182,9 @@ open dist/WattMeter.app            # menu-bar app, no Dock icon
 ./scripts/package-dmg.sh           # build a drag-to-Applications DMG
 ./.build/bin/wattprobe             # CLI probe, 10 samples at 1 s
 ./.build/bin/wattprobe --keys      # list candidate SMC keys for your model
-./.build/bin/wattmeter-snapshot --view dashboard --state charging --out docs/preview-panel.png
+./.build/bin/wattprobe --split-test   # self-check the adapter/battery/charge split
+.build/bin/wattmeter-snapshot --view dashboard --state charging --out docs/preview-panel.png
+./.build/bin/wattmeter-snapshot --view dashboard --state hybrid  --out docs/preview-panel-hybrid.png
 ```
 
 Self-checks:

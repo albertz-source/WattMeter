@@ -275,6 +275,7 @@ public struct PowerHeader: View {
     private var stateColor: Color {
         guard let reading else { return Palette.muted }
         if !reading.hasBattery { return Palette.mint }
+        if reading.isHybrid { return Palette.amber }
         if reading.isCharging { return Palette.charge }
         if reading.onAC { return Palette.mint }
         return Palette.amber

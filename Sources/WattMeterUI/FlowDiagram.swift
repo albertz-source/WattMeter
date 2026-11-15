@@ -44,7 +44,10 @@ public struct FlowDiagram: View {
     private var charging: Bool { hasBattery && onAC && (batteryPower ?? 0) > 0.05 }
     private var standby: Bool { hasBattery && onAC && abs(batteryPower ?? 0) <= 0.05 }
     private var discharging: Bool { hasBattery && (batteryPower ?? 0) < -0.05 }
-    private var hybrid: Bool { onAC && discharging }
+    /// 电源 + 电池同时供电（弱充电器 + 高负载）
+    private var hybrid: Bool { reading?.isHybrid ?? false }
+    private var adapterToLoadW: Double { reading?.adapterToLoadW ?? 0 }
+    private var batteryToLoadW: Double { reading?.batteryToLoadW ?? 0 }
 
     private let systemTint = Palette.blue
     private let displayTint = Palette.purple
@@ -58,6 +61,10 @@ public struct FlowDiagram: View {
     private let centerNodeWidth: CGFloat = 40
     private let rightNodeX: CGFloat = 324
     private let rightNodeWidth: CGFloat = 40
+
+    // 混合供电时左侧两个节点的中心 y
+    private let hybridAdapterY: CGFloat = 52
+    private let hybridBatteryY: CGFloat = 128
 
     // MARK: - 连线
 
@@ -178,9 +185,16 @@ public struct FlowDiagram: View {
     // 所有连线（在所有节点之下）
     private var links: some View {
         ZStack {
-            if onAC, let input = adapterInput {
-                let leftY: CGFloat = hybrid ? 116 : 94
-                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: leftY),
+            if hybrid {
+                // 电源在上、电池在下，两条流线汇入整机左侧
+                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: hybridAdapterY),
+                     to: CGPoint(x: centerNodeX, y: 78),
+                     watts: adapterToLoadW, tint: Palette.mint)
+                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: hybridBatteryY),
+                     to: CGPoint(x: centerNodeX, y: 112),
+                     watts: batteryToLoadW, tint: batteryTint)
+            } else if onAC, adapterInput != nil {
+                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: 94),
                      to: CGPoint(x: centerNodeX, y: 94),
                      watts: total, tint: Palette.mint)
             } else if hasBattery, discharging {
@@ -189,13 +203,7 @@ public struct FlowDiagram: View {
                      watts: total, tint: batteryTint)
             }
 
-            if hybrid {
-                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: 20),
-                     to: CGPoint(x: centerNodeX, y: 46),
-                     watts: batteryPower.map { abs($0) }, tint: batteryTint)
-            }
-
-            if onAC {
+            if onAC && !hybrid {
                 link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 52),
                      to: CGPoint(x: rightNodeX, y: 24),
                      watts: system, tint: systemTint)
@@ -233,22 +241,24 @@ public struct FlowDiagram: View {
     private var nodes: some View {
         ZStack {
             // 左侧供电源
-            if onAC {
-                node("powerplug.fill", Palette.mint, leftNodeX, hybrid ? 116 : 94, 84)
+            if hybrid {
+                // 上：电源适配器；下：电池补足
+                node("powerplug.fill", Palette.mint, leftNodeX, hybridAdapterY, 64)
+                label(wattsText(adapterToLoadW), L("电源输入 →"), Palette.mint,
+                      96, hybridAdapterY, detail: reading?.inputRailsText)
+                node("battery.100percent", batteryTint, leftNodeX, hybridBatteryY, 64)
+                label(wattsText(batteryToLoadW), L("电池辅助 →"), batteryTint,
+                      96, hybridBatteryY, detail: L("放电中"))
+            } else if onAC {
+                node("powerplug.fill", Palette.mint, leftNodeX, 94, 84)
                 label(wattsText(adapterInput), L("电源输入 →"), Palette.mint,
-                      96, hybrid ? 116 : 94,
-                      detail: reading?.inputRailsText)
+                      96, 94, detail: reading?.inputRailsText)
             } else if hasBattery {
                 node("battery.100percent", batteryTint, leftNodeX, 94, 84)
                 label(wattsText(batteryPower.map { abs($0) }), L("电池供电 →"), batteryTint, 96, 94)
             } else {
                 node("powerplug.fill", Color.white.opacity(0.4), leftNodeX, 94, 84, muted: true)
                 label("—", L("等待数据 →"), Color.white.opacity(0.4), 96, 94, muted: true)
-            }
-
-            if hybrid {
-                node("battery.100percent", batteryTint, leftNodeX, 20, 32)
-                label(wattsText(batteryPower.map { abs($0) }), L("电池辅助 →"), batteryTint, 97, 24)
             }
 
             // 中央整机
@@ -264,7 +274,7 @@ public struct FlowDiagram: View {
                 .position(x: centerNodeX + 20, y: 136)
 
             // 右侧分支
-            if onAC {
+            if onAC && !hybrid {
                 node("cpu", systemTint, rightNodeX, 24, 40)
                 label(wattsText(system), L("系统"), systemTint, 261, 24)
 

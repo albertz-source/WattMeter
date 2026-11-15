@@ -66,6 +66,7 @@ MainActor.assumeIsolated {
     case "battery":  endPhase = 30   // 电池放电
     case "charging": endPhase = 70   // 接电源 + 充电
     case "ac":       endPhase = 90   // 接电源 + 已充满
+    case "hybrid":   endPhase = 50   // 45W 适配器 + 高负载 → 电池补足
     default:         endPhase = nil
     }
     store.loadPreview(samples: DemoGenerator.history(seconds: 300, endPhase: endPhase))

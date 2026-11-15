@@ -11,6 +11,7 @@ var count = 10
 var interval: TimeInterval = 1.0
 var asJSON = false
 var listKeys = false
+var splitTest = false
 
 var positional: [String] = []
 var index = 1
@@ -21,6 +22,8 @@ while index < CommandLine.arguments.count {
         asJSON = true
     case "--keys":
         listKeys = true
+    case "--split-test":
+        splitTest = true
     case "--interval", "-i":
         index += 1
         if index < CommandLine.arguments.count, let v = Double(CommandLine.arguments[index]) {
@@ -49,6 +52,36 @@ if positional.count > 0, let v = Int(positional[0]) { count = max(1, v) }
 if positional.count > 1, let v = Double(positional[1]) { interval = max(0.05, v) }
 
 let reader = PowerReader()
+
+if splitTest {
+    var failed = 0
+    func check(_ name: String, _ got: PowerReader.PowerSplit, _ want: (Double, Double, Double)) {
+        let ok = abs(got.adapterToLoad - want.0) < 0.01
+              && abs(got.batteryToLoad - want.1) < 0.01
+              && abs(got.charge - want.2) < 0.01
+        print(String(format: "  %@ %-38s adapter=%5.1f battery=%5.1f charge=%5.1f",
+                     ok ? "PASS" : "FAIL", (name as NSString).utf8String ?? "",
+                     got.adapterToLoad, got.batteryToLoad, got.charge))
+        if !ok { failed += 1 }
+    }
+    print("功率分流自检（电源 / 电池 / 充电）：")
+    // 台式机：无电池，全部来自电源
+    check("desktop, no battery", PowerReader.split(input: 12, load: 12, hasBattery: false, onAC: true), (12, 0, 0))
+    // 笔记本：接电且充电
+    check("laptop charging 65W", PowerReader.split(input: 65, load: 30, hasBattery: true, onAC: true), (30, 0, 35))
+    // 笔记本：混合供电（45W 适配器 + 52W 负载）
+    check("hybrid: 45W adapter, 52W load", PowerReader.split(input: 45, load: 52, hasBattery: true, onAC: true), (45, 7, 0))
+    // 笔记本：纯电池放电
+    check("battery only 20W", PowerReader.split(input: nil, load: 20, hasBattery: true, onAC: false), (0, 20, 0))
+    // 笔记本：接电已充满
+    check("on AC, fully charged", PowerReader.split(input: 14, load: 14, hasBattery: true, onAC: true), (14, 0, 0))
+    // 死区：0.6W 的相位差不应显示为电池供电
+    check("dead band 0.6W", PowerReader.split(input: 20.4, load: 21.0, hasBattery: true, onAC: true), (21, 0, 0))
+    // 弱充电器 + 大负载：电池补足大部分
+    check("hybrid: 20W adapter, 60W load", PowerReader.split(input: 20, load: 60, hasBattery: true, onAC: true), (20, 40, 0))
+    print(failed == 0 ? "全部通过" : "有 \(failed) 项失败")
+    exit(failed == 0 ? 0 : 1)
+}
 
 if listKeys {
     print("候选 SMC 键（flt 类型，单位 W）：")

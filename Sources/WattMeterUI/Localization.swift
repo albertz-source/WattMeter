@@ -166,6 +166,7 @@ extension Localization {
         "外接电源": "On AC",
         "电池供电": "On battery",
         "外接电源 · 待机": "On AC · idle",
+        "混合供电": "Hybrid power",
         "本机无内置电池": "No internal battery",
         "系统遥测（约 20 秒刷新）": "System telemetry (~20 s)",
         // 窗口

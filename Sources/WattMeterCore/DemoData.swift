@@ -23,34 +23,40 @@ public struct DemoGenerator {
         let t = Double(tick) * interval
         let cycle = t.truncatingRemainder(dividingBy: 110.0)
 
-        // 阶段参数：phase → (系统负载, 是否接电, 是否充电, 电池电量)
-        let phase: (load: Double, onAC: Bool, charging: Bool, soc: Double)
+        // 阶段参数：phase → (系统负载, 是否接电, 是否充电, 电池电量, 是否混合供电)
+        let phase: (load: Double, onAC: Bool, charging: Bool, soc: Double, hybrid: Bool)
         switch cycle {
         case ..<22:
-            phase = (7.2, false, false, 62)
+            phase = (7.2, false, false, 62, false)
         case ..<42:
-            phase = (28.5, false, false, 60)
+            phase = (28.5, false, false, 60, false)
         case ..<58:
-            phase = (34.0, true, true, 58)
+            // 45W 适配器 + 52W 负载 → 电池补足，混合供电
+            phase = (52.0, true, false, 58, true)
         case ..<82:
-            phase = (15.0, true, true, 66)
+            phase = (15.0, true, true, 66, false)
         case ..<96:
-            phase = (9.5, true, false, 84)
+            phase = (9.5, true, false, 84, false)
         default:
-            phase = (7.8, true, false, 85)
+            phase = (7.8, true, false, 85, false)
         }
 
         let noise = rng.nextDouble(in: -0.8...0.8)
         let ripple = sin(t * 0.9) * 0.6
         let load = max(2.0, phase.load + noise + ripple)
 
-        // 适配器：65W 充电器
+        // 适配器：65W；混合供电阶段换成 45W 适配器
+        let adapterLimit: Double = phase.hybrid ? 45.0 : 65.0
         var adapterIn: Double
         var batteryPower: Double
         var charging = phase.charging
 
         if phase.onAC {
-            if phase.charging {
+            if phase.hybrid {
+                adapterIn = min(load, adapterLimit)
+                batteryPower = -(load - adapterIn)
+                charging = false
+            } else if phase.charging {
                 let chargeRate = 18.0 + sin(t * 0.4) * 3.0
                 adapterIn = load + chargeRate
                 batteryPower = chargeRate
@@ -97,8 +103,8 @@ public struct DemoGenerator {
             systemPowerW: system,
             adapterInputW: adapterIn > 0 ? adapterIn : nil,
             batteryPowerW: batteryPower,
-            adapterRatedW: 65,
-            adapterName: "65W USB-C 电源适配器",
+            adapterRatedW: adapterLimit,
+            adapterName: phase.hybrid ? "45W USB-C 电源适配器" : "65W USB-C 电源适配器",
             wallPowerW: adapterIn > 0 ? adapterIn + loss : nil,
             adapterLossW: loss,
             adapterToLoadW: adapterToLoad,
@@ -107,7 +113,7 @@ public struct DemoGenerator {
             hasBattery: true,
             onAC: phase.onAC,
             isCharging: charging && chargeW > 0.1,
-            isCharged: phase.onAC && !charging && soc > 80,
+            isCharged: phase.onAC && !charging && !phase.hybrid && soc > 80,
             batteryPercent: soc,
             timeRemainingMinutes: phase.onAC ? nil : (phase.load > 20 ? 95 : 380),
             displayPowerW: safeDisplay,
