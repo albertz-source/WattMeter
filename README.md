@@ -227,12 +227,33 @@ drag `WattMeter.app` into Applications.
 
 ---
 
-## 7. Verify on your own Mac
+## 7. Verify on your own Mac (including laptops)
 
 ```bash
-./.build/bin/wattprobe --keys   # which SMC power/fan/backlight keys your model exposes
-./.build/bin/wattprobe 20 1     # 20 samples, one per second
+./.build/bin/wattprobe --keys      # which SMC power/fan/backlight keys your model exposes
+./.build/bin/wattprobe 20 1        # 20 samples, one per second
+./.build/bin/wattprobe --split-test   # adapter/battery/charge split rules
+./.build/bin/wattprobe --battery      # full battery-machine diagnostic
 ```
+
+On a MacBook, `--battery` should normally show:
+
+- `电池安装: 是`, battery voltage around 11–13 V, and a **negative** battery current while discharging
+- `分流` numbers that add up: `电源→负载 + 电池→负载 ≈ 整机`
+- the correct state: `纯电池供电` / `充电中` / `混合供电` / `外接电源`
+
+Four scenarios worth testing by hand:
+
+| Scenario | Expected UI |
+| --- | --- |
+| Charger unplugged | single battery source on the left, adapter input `—` (a stale `PDTR` value is ignored) |
+| Plugged in and charging | adapter on the left, charging branch on the right, state “Charging” |
+| Weak charger + high load | two sources on the left (adapter + battery), state “Hybrid power” |
+| Full and idle on AC | adapter only, state “Fully charged” |
+
+Known model differences handled in code: `Amperage` may be stored as an unsigned 32-bit
+two's-complement value, the charging port also shows up in the `D1..D4` rails (filtered by matching
+the adapter input power), and battery temperature keys differ per model.
 
 If `PSTR` / `PDTR` are missing on your model, the app falls back to `PowerTelemetryData` (marked “System telemetry” in the UI). On fanless Macs the fan row shows “—”.
 

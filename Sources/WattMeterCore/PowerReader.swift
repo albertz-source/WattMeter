@@ -90,6 +90,18 @@ public final class PowerReader {
         let load = systemW ?? 0
         let split = Self.split(input: adapterInW, load: load,
                                hasBattery: hasBattery, onAC: onAC)
+
+        // 未接电源时，适配器输入不参与展示（PDTR 可能残留）
+        if !onAC, hasBattery {
+            adapterInW = nil
+        }
+
+        // 混合供电：电池在放电，净功率必须是负值（修正个别机型的符号/标志不一致）
+        if var battery = batteryW, battery > 0.05,
+           split.batteryToLoad > 0.5, raw.isCharging == 0 {
+            battery = -abs(battery)
+            batteryW = battery
+        }
         let adapterToLoad = split.adapterToLoad
         let batteryToLoad = split.batteryToLoad
         let chargeW = split.charge
@@ -141,10 +153,25 @@ public final class PowerReader {
         // 分项（笔记本机型可用）
         let displayW: Double? = raw.displayAvailable != 0 && raw.displayPower_W >= 0
             ? raw.displayPower_W : nil
-        let portW: Double? = raw.portTelemetryAvailable != 0 ? raw.portPower_W : nil
+        var portW: Double? = raw.portTelemetryAvailable != 0 ? raw.portPower_W : nil
+
+        // 充电时，充电口的输入也会出现在 D1..D4 供电轨里。
+        // 用「与适配器输入功率接近」来判掉那一条，避免把输入当成对外供电。
+        if let currentPort = portW, currentPort > 0.5,
+           raw.isCharging != 0, let input = measuredInputW, input > 0.5 {
+            let rails = raw.portRailPowers
+            if let index = rails.firstIndex(where: { abs($0 - input) <= max(2.0, input * 0.15) }) {
+                let filtered = rails.enumerated()
+                    .filter { $0.offset != index }
+                    .reduce(0.0) { $0 + $1.element }
+                portW = filtered > 0.05 ? filtered : 0
+            }
+        }
         func temp(_ value: Double) -> Double? {
             value.isFinite && value > -20 && value < 150 ? value : nil
         }
+        let batteryVoltageV: Double? = raw.batteryVoltage_mV > 1000 ? raw.batteryVoltage_mV / 1000.0 : nil
+        let batteryCurrentA: Double? = raw.batteryInstalled != 0 ? raw.batteryAmperage_mA / 1000.0 : nil
         let fanW: Double? = raw.fanAvailable != 0 ? raw.fanRPM : nil
         let fanMin: Double? = raw.fanAvailable != 0 && raw.fanMinRPM > 0 ? raw.fanMinRPM : nil
         let fanMax: Double? = raw.fanAvailable != 0 && raw.fanMaxRPM > 0 ? raw.fanMaxRPM : nil
@@ -170,6 +197,8 @@ public final class PowerReader {
             portPowerW: portW,
             inputVoltageV: inputV,
             inputCurrentA: inputA,
+            batteryVoltageV: batteryVoltageV,
+            batteryCurrentA: batteryCurrentA,
             cpuTempC: temp(raw.cpuTempC),
             gpuTempC: temp(raw.gpuTempC),
             ssdTempC: temp(raw.ssdTempC),
@@ -204,7 +233,10 @@ public final class PowerReader {
         var batteryToLoad = 0.0
         var charge = 0.0
 
-        if let input, input > 0.05 {
+        if !onAC, hasBattery {
+            // 拔掉电源的瞬间 PDTR 可能还有残留值，电池模式下必须忽略它
+            batteryToLoad = load
+        } else if let input, input > 0.05 {
             adapterToLoad = min(input, load)
             batteryToLoad = max(0, load - input)
             charge = max(0, input - load)
@@ -259,8 +291,21 @@ public final class PowerReader {
     private func normalizeBatteryPower(_ measured: Double, charging: Bool,
                                        onAC: Bool, charged: Bool) -> Double {
         if charging { return abs(measured) }
-        if onAC { return charged ? 0 : abs(measured) }
-        return -abs(measured)
+        if !onAC { return -abs(measured) }
+        // 接着电源但没在充电：只有电流为负才是「电池在补足负载」（混合供电）
+        if measured < -0.05 { return -abs(measured) }
+        return 0
+    }
+}
+
+extension SPReading {
+    /// C 结构里的 4 条 USB-C 供电轨
+    var portRailPowers: [Double] {
+        withUnsafeBytes(of: portRailPower_W) { buffer in
+            let count = min(max(Int(portRailCount), 0), 4)
+            let values = buffer.bindMemory(to: Double.self)
+            return (0..<count).map { values[$0] }
+        }
     }
 }
 

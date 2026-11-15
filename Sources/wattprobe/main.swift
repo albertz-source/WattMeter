@@ -12,6 +12,7 @@ var interval: TimeInterval = 1.0
 var asJSON = false
 var listKeys = false
 var splitTest = false
+var batteryReport = false
 
 var positional: [String] = []
 var index = 1
@@ -24,6 +25,8 @@ while index < CommandLine.arguments.count {
         listKeys = true
     case "--split-test":
         splitTest = true
+    case "--battery":
+        batteryReport = true
     case "--interval", "-i":
         index += 1
         if index < CommandLine.arguments.count, let v = Double(CommandLine.arguments[index]) {
@@ -79,8 +82,64 @@ if splitTest {
     check("dead band 0.6W", PowerReader.split(input: 20.4, load: 21.0, hasBattery: true, onAC: true), (21, 0, 0))
     // 弱充电器 + 大负载：电池补足大部分
     check("hybrid: 20W adapter, 60W load", PowerReader.split(input: 20, load: 60, hasBattery: true, onAC: true), (20, 40, 0))
+    // 刚拔掉电源：PDTR 可能残留，不能被当成电源供电
+    check("unplugged, stale PDTR", PowerReader.split(input: 45, load: 20, hasBattery: true, onAC: false), (0, 20, 0))
+    // 刚插上电源、数据还没更新
+    check("plugged in, no input yet", PowerReader.split(input: nil, load: 20, hasBattery: true, onAC: true), (20, 0, 0))
     print(failed == 0 ? "全部通过" : "有 \(failed) 项失败")
     exit(failed == 0 ? 0 : 1)
+}
+
+if batteryReport {
+    guard let r = reader.read() else {
+        print("读取失败：没有可用数据")
+        exit(1)
+    }
+    func f(_ v: Double?, _ digits: Int = 2) -> String {
+        guard let v, v.isFinite else { return "—" }
+        return String(format: "%.\(digits)f", v)
+    }
+    func smc(_ key: String) -> String {
+        guard let v = reader.smcFloat(key) else { return "—" }
+        return f(v)
+    }
+    print("== WattMeter 电池机型诊断 ==")
+    print("电池安装: \(r.hasBattery ? "是" : "否")   外部电源: \(r.onAC ? "是" : "否")   充电中: \(r.isCharging ? "是" : "否")   已充满: \(r.isCharged ? "是" : "否")")
+    print("电池电压: \(f(r.batteryVoltageV)) V   电池电流: \(f(r.batteryCurrentA)) A   （负值 = 放电）")
+    func remainingText(_ minutes: Double?) -> String {
+        guard let minutes, minutes > 0 else { return "—" }
+        let m = Int(minutes.rounded())
+        return m >= 60 ? "\(m / 60) 小时 \(m % 60) 分" : "\(m) 分钟"
+    }
+    print("电量: \(r.batteryPercent.map { String(format: "%.0f%%", $0) } ?? "—")   剩余: \(remainingText(r.timeRemainingMinutes))")
+    print("适配器: 额定 \(f(r.adapterRatedW, 0)) W   名称: \(r.adapterName ?? "—")")
+    print("SMC : PSTR=\(smc("PSTR"))W  PDTR=\(smc("PDTR"))W  VD0R=\(smc("VD0R"))V  ID0R=\(smc("ID0R"))A")
+    print("SMC 电池键: B0AV=\(smc("B0AV"))  B0AC=\(smc("B0AC"))  TB0T=\(smc("TB0T"))")
+    print("分流: 电源→负载 \(f(r.adapterToLoadW)) W   电池→负载 \(f(r.batteryToLoadW)) W   充电 \(f(r.chargeW)) W")
+    print("净功率: 电池 \(f(r.batteryPowerW)) W   适配器输入 \(f(r.adapterInputW)) W   整机 \(f(r.totalW)) W")
+    print("分项: 系统 \(f(r.systemComponentW)) W   屏幕 \(f(r.displayPowerW)) W   接口 \(f(r.portPowerW)) W")
+    print("温度: CPU \(f(r.cpuTempC, 1))  GPU \(f(r.gpuTempC, 1))  SSD \(f(r.ssdTempC, 1))  电池 \(f(r.batteryTempC, 1))  平台 \(f(r.platformTempC, 1))")
+    print("风扇: \(r.fanText) RPM")
+    let state: String
+    if !r.hasBattery { state = "台式机（无电池）" }
+    else if !r.onAC { state = "纯电池供电" }
+    else if r.isCharging { state = "充电中（电源供电 + 电池充电）" }
+    else if r.isHybrid { state = "混合供电（电源不足，电池补足）" }
+    else { state = r.isCharged ? "外接电源（已充满）" : "外接电源（待机）" }
+    print("判定: \(state)")
+    if r.hasBattery, r.batteryPercent == nil {
+        print("提示: 读不到电池电量，可能 IOPS 未返回内部电池信息。")
+    }
+    if r.hasBattery, r.batteryPowerW == nil {
+        print("提示: 读不到电池净功率，Amperage/InstantAmperage 可能为 0 或类型异常。")
+    }
+    if r.hasBattery, r.onAC, !r.isCharging, r.batteryToLoadW > 0.5 {
+        print("提示: 检测到混合供电，请对照系统「电池」面板确认电池正在放电。")
+    }
+    if r.hasBattery, r.batteryVoltageV == nil {
+        print("提示: 电池电压异常（Voltage 字段缺失或超出 1–30V）。")
+    }
+    exit(0)
 }
 
 if listKeys {

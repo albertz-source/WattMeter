@@ -62,6 +62,10 @@ public struct PowerReading: Identifiable, Sendable {
     public let inputVoltageV: Double?
     public let inputCurrentA: Double?
 
+    /// 电池电压 / 电流（V / A；电流为负表示放电）
+    public let batteryVoltageV: Double?
+    public let batteryCurrentA: Double?
+
     /// 组件温度（℃，读不到为 nil）
     public let cpuTempC: Double?
     public let gpuTempC: Double?
@@ -170,6 +174,8 @@ public struct PowerReading: Identifiable, Sendable {
         portPowerW: Double? = nil,
         inputVoltageV: Double? = nil,
         inputCurrentA: Double? = nil,
+        batteryVoltageV: Double? = nil,
+        batteryCurrentA: Double? = nil,
         cpuTempC: Double? = nil,
         gpuTempC: Double? = nil,
         ssdTempC: Double? = nil,
@@ -201,6 +207,8 @@ public struct PowerReading: Identifiable, Sendable {
         self.portPowerW = portPowerW
         self.inputVoltageV = inputVoltageV
         self.inputCurrentA = inputCurrentA
+        self.batteryVoltageV = batteryVoltageV
+        self.batteryCurrentA = batteryCurrentA
         self.cpuTempC = cpuTempC
         self.gpuTempC = gpuTempC
         self.ssdTempC = ssdTempC

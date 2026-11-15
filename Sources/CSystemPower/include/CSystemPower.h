@@ -42,6 +42,10 @@ typedef struct SPReading {
     double  adapterCurrent_mA;
     char    adapterName[128];
 
+    /* ---- USB-C 对外供电分轨（D1..D4，逐通道） ---- */
+    int32_t portRailCount;
+    double  portRailPower_W[4];
+
     /* ---- 适配器输入电压 / 电流（SMC VD0R / ID0R） ---- */
     int32_t smcHasInputRails;
     double  smcInputVoltage_V;

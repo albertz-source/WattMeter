@@ -290,6 +290,19 @@ static int cf_bool(CFDictionaryRef d, CFStringRef k, int fallback) {
     return fallback;
 }
 
+/* 读取有符号电流：某些机型把 32 位补码存成无符号数（如 4294966296 表示 -1000） */
+static double cf_signed_number(CFDictionaryRef d, CFStringRef k) {
+    if (!d) return 0;
+    CFTypeRef v = CFDictionaryGetValue(d, k);
+    if (!v || CFGetTypeID(v) != CFNumberGetTypeID()) return 0;
+    int64_t value = 0;
+    if (!CFNumberGetValue((CFNumberRef)v, kCFNumberSInt64Type, &value)) return 0;
+    if (value > INT32_MAX && value <= (int64_t)UINT32_MAX) {
+        return (double)(int32_t)(uint32_t)value;
+    }
+    return (double)value;
+}
+
 static double cf_double(CFDictionaryRef d, CFStringRef k, double fallback) {
     if (!d) return fallback;
     CFTypeRef v = CFDictionaryGetValue(d, k);
@@ -340,10 +353,10 @@ static void read_smart_battery(SPReading *r) {
     r->isCharged = cf_bool(props, CFSTR("IsCharged"), 0);
 
     r->batteryVoltage_mV = cf_double(props, CFSTR("Voltage"), 0.0);
-    r->batteryAmperage_mA = cf_double(props, CFSTR("Amperage"), 0.0);
+    r->batteryAmperage_mA = cf_signed_number(props, CFSTR("Amperage"));
     if (r->batteryAmperage_mA == 0.0) {
         /* InstantAmperage 更新更快，但某些机型没有 */
-        r->batteryAmperage_mA = cf_double(props, CFSTR("InstantAmperage"), 0.0);
+        r->batteryAmperage_mA = cf_signed_number(props, CFSTR("InstantAmperage"));
     }
 
     /* 适配器信息 */
@@ -575,6 +588,7 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
         /* USB-C 对外供电通道：D1..D4 的电压 × 电流（PowerLens 同款做法） */
         double railSum = 0;
         int    railsAnswered = 0;
+        out->portRailCount = 0;
         for (int ch = 1; ch <= 4; ch++) {
             char vkey[8], akey[8];
             snprintf(vkey, sizeof vkey, "D%dJV", ch);
@@ -585,7 +599,12 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
                 railsAnswered = 1;
                 if (volts >= 0 && volts <= 60 && amps >= 0 && amps <= 12) {
                     double w = volts * amps;
-                    if (w <= 150) railSum += w;
+                    if (w <= 150) {
+                        railSum += w;
+                        if (out->portRailCount < 4) {
+                            out->portRailPower_W[out->portRailCount++] = w;
+                        }
+                    }
                 }
             }
         }
