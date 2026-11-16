@@ -67,9 +67,11 @@ typedef struct SPReading {
 
     /* ---- 风扇（F0Ac / F0Mn / F0Mx） ---- */
     int32_t fanAvailable;
-    double  fanRPM;
+    int32_t fanCount;        /* 识别到的风扇数量（0..4） */
+    double  fanRPM;          /* 多风扇时取最大值 */
     double  fanMinRPM;
     double  fanMaxRPM;
+    double  fanTargetRPM;
 
     /* ---- 分项功率（笔记本机型可用） ---- */
     int32_t displayAvailable;     // 内置屏幕背光是否可读
@@ -101,6 +103,10 @@ int32_t sp_reader_read_smc_float(SPReader *reader, const char *key, double *out)
 
 /* 该 SMC 键是否存在且为 flt 类型；返回 1/0。 */
 int32_t sp_reader_smc_key_exists(SPReader *reader, const char *key);
+
+/* 把所有风扇相关 SMC 键（F*）的名称、类型、数值写入缓冲区，供诊断使用。
+   返回写入的字节数（不含结尾 0）。 */
+int32_t sp_reader_dump_fan_keys(SPReader *reader, char *buffer, int32_t size);
 
 #ifdef __cplusplus
 }

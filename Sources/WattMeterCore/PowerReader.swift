@@ -178,6 +178,8 @@ public final class PowerReader {
         let batteryVoltageV: Double? = raw.batteryVoltage_mV > 1000 ? raw.batteryVoltage_mV / 1000.0 : nil
         let batteryCurrentA: Double? = raw.batteryInstalled != 0 ? raw.batteryAmperage_mA / 1000.0 : nil
         let fanW: Double? = raw.fanAvailable != 0 ? raw.fanRPM : nil
+        let fanCount: Int? = raw.fanAvailable != 0 ? Int(raw.fanCount) : nil
+        let fanTarget: Double? = raw.fanAvailable != 0 && raw.fanTargetRPM > 0 ? raw.fanTargetRPM : nil
         let fanMin: Double? = raw.fanAvailable != 0 && raw.fanMinRPM > 0 ? raw.fanMinRPM : nil
         let fanMax: Double? = raw.fanAvailable != 0 && raw.fanMaxRPM > 0 ? raw.fanMaxRPM : nil
 
@@ -210,8 +212,10 @@ public final class PowerReader {
             batteryTempC: temp(raw.batteryTempC),
             platformTempC: temp(raw.platformTempC),
             fanRPM: fanW,
+            fanCount: fanCount,
             fanMinRPM: fanMin,
             fanMaxRPM: fanMax,
+            fanTargetRPM: fanTarget,
             source: dataSource
         )
     }
@@ -276,6 +280,15 @@ public final class PowerReader {
         return PowerSplit(adapterToLoad: adapterToLoad,
                           batteryToLoad: batteryToLoad,
                           charge: charge)
+    }
+
+    /// 导出所有风扇相关 SMC 键（诊断用）
+    public func dumpFanKeys() -> String {
+        guard let handle else { return "" }
+        var buffer = [CChar](repeating: 0, count: 4096)
+        let written = sp_reader_dump_fan_keys(handle, &buffer, 4096)
+        guard written > 0 else { return "" }
+        return String(cString: buffer)
     }
 
     /// 读取任意 SMC flt 键（扩展/调试用），单位通常为 W。

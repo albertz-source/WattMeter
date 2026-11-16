@@ -73,11 +73,14 @@ public struct PowerReading: Identifiable, Sendable {
     public let batteryTempC: Double?
     public let platformTempC: Double?
 
-    /// 风扇实际转速（RPM，SMC F0Ac）
+    /// 风扇实际转速（RPM，多风扇取最大值）
     public let fanRPM: Double?
-    /// 风扇转速范围（RPM，SMC F0Mn / F0Mx）
+    /// 识别到的风扇数量
+    public let fanCount: Int?
+    /// 风扇转速范围（RPM）与目标转速
     public let fanMinRPM: Double?
     public let fanMaxRPM: Double?
+    public let fanTargetRPM: Double?
 
     public let source: PowerDataSource
 
@@ -182,8 +185,10 @@ public struct PowerReading: Identifiable, Sendable {
         batteryTempC: Double? = nil,
         platformTempC: Double? = nil,
         fanRPM: Double? = nil,
+        fanCount: Int? = nil,
         fanMinRPM: Double? = nil,
         fanMaxRPM: Double? = nil,
+        fanTargetRPM: Double? = nil,
         source: PowerDataSource
     ) {
         self.timestamp = timestamp
@@ -215,6 +220,8 @@ public struct PowerReading: Identifiable, Sendable {
         self.batteryTempC = batteryTempC
         self.platformTempC = platformTempC
         self.fanRPM = fanRPM
+        self.fanCount = fanCount
+        self.fanTargetRPM = fanTargetRPM
         self.fanMinRPM = fanMinRPM
         self.fanMaxRPM = fanMaxRPM
         self.source = source

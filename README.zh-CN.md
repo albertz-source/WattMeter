@@ -58,7 +58,7 @@
 | 电池状态 / 电量 / 剩余时间 | IOKit `IOPowerSources` | 事件驱动 | |
 | 适配器额定功率与名称 | `AdapterDetails` | 插拔时 | |
 | 兜底遥测 | `PowerTelemetryData` | **约 20 秒** | `SystemLoad` / `SystemPowerIn`、适配器损耗 |
-| 风扇 | AppleSMC `F0Ac`、`F0Mn`、`F0Mx` | 亚秒级 | `flt` 或 `fpe2` 类型 |
+| 风扇 | AppleSMC `F?Ac` / `F?Mn` / `F?Mx` / `F?Tg` | 亚秒级 | 启动时枚举发现，键名与类型随机型不同（`flt` / `fpe2` / `ui16`）；多风扇取最大转速 |
 | 屏幕背光 | AppleSMC `PDBR` / `PBwo` / `PBLR` | 亚秒级 | 仅带内置屏的机型 |
 | USB-C 对外供电 | AppleSMC `D1..D4 JV×JI`，否则 `PowerOutDetails` | 亚秒级 | 排除充电输入通道 |
 | 组件温度 | AppleSMC `Tp*`（CPU）、`Tg*`（GPU）、`TH0*`（SSD）、`TB0*`（电池）、`Ts0P`（平台） | 亚秒级 | 启动时枚举 SMC 键自动发现，因为后缀随机型不同（例如 M2 是 `Tg0e/f/m/n/q/r` 而不是 `Tg0D`）；读不到显示「—」 |
@@ -241,7 +241,8 @@ git push origin v<版本>
 ./.build/bin/wattprobe --keys        # 查看你的机型暴露了哪些功率/风扇/背光 SMC 键
 ./.build/bin/wattprobe 20 1          # 采样 20 次，每秒一次
 ./.build/bin/wattprobe --split-test  # 电源/电池/充电分流规则自检
-./.build/bin/wattprobe --battery     # 电池机型完整诊断
+.build/bin/wattprobe --battery     # 电池机型完整诊断
+./.build/bin/wattprobe --fans        # 列出所有风扇 SMC 键及其解码值
 ```
 
 在 MacBook 上，`--battery` 正常应该看到：

@@ -76,6 +76,17 @@ struct SPReader {
     int  gpuKeyCount;
     char ssdKeys[SP_MAX_SSD_KEYS][5];
     int  ssdKeyCount;
+    /* 风扇键：不同机型命名/类型不同，也做一次枚举 */
+    char fanKeys[24][5];       /* 所有 F 开头键（诊断用） */
+    int  fanKeyCount;
+    char fanActualKeys[4][5];  /* F?Ac 实际转速 */
+    int  fanActualCount;
+    char fanTargetKeys[4][5];  /* F?Tg 目标转速 */
+    int  fanTargetCount;
+    char fanMinKeys[4][5];     /* F?Mn */
+    int  fanMinCount;
+    char fanMaxKeys[4][5];     /* F?Mx */
+    int  fanMaxCount;
 };
 
 static kern_return_t smc_call(io_connect_t conn, SMCKeyData *in, SMCKeyData *out) {
@@ -190,6 +201,36 @@ static double smc_max_temp(io_connect_t conn, const char *const *keys, int count
     return best;
 }
 
+/* 风扇数值解码：兼容 flt / fpe2 / sp78 / ui16 / ui8 / si16 */
+static int smc_read_fan_value(io_connect_t conn, const char *key, double *value) {
+    uint32_t type = 0;
+    uint8_t  size = 0;
+    if (smc_key_info(conn, key, &type, &size) != 0) return -1;
+    if (size == 0 || size > 32) return -2;
+    uint8_t raw[32] = {0};
+    if (smc_read_raw(conn, key, raw, size) != 0) return -3;
+
+    if (type == SMC_KEY_FLT && size == 4) {
+        float f = 0;
+        memcpy(&f, raw, 4);
+        *value = (double)f;
+    } else if (type == SMC_KEY_FPE2 && size == 2) {
+        *value = (double)(((uint16_t)raw[0] << 8) | raw[1]) / 4.0;
+    } else if (type == SMC_KEY_SP78 && size == 2) {
+        *value = (double)((int16_t)(((uint16_t)raw[0] << 8) | raw[1])) / 256.0;
+    } else if (type == 0x75693136 && size == 2) {   /* 'ui16'，大端 */
+        *value = (double)(((uint16_t)raw[0] << 8) | raw[1]);
+    } else if (type == 0x75693820 && size == 1) {   /* 'ui8 ' */
+        *value = (double)raw[0];
+    } else if (type == 0x73693136 && size == 2) {   /* 'si16'，大端有符号 */
+        *value = (double)((int16_t)(((uint16_t)raw[0] << 8) | raw[1]));
+    } else {
+        return -4;
+    }
+    if (!(*value == *value)) return -5;
+    return 0;
+}
+
 /* 读取 SMC 键总数（#KEY） */
 static int smc_key_count(io_connect_t conn) {
     uint32_t type = 0;
@@ -234,6 +275,19 @@ static void discover_temp_keys(SPReader *r) {
         for (int i = 0; i < n; i++) {
             char k[5];
             if (smc_key_at(r->smcConnection, i, k) != 0) continue;
+            if (k[0] == 'F' && r->fanKeyCount < 24) {
+                memcpy(r->fanKeys[r->fanKeyCount++], k, 5);
+                if (k[2] == 'A' && k[3] == 'c') {
+                    add_temp_key(r->fanActualKeys, &r->fanActualCount, 4, k);
+                } else if (k[2] == 'T' && k[3] == 'g') {
+                    add_temp_key(r->fanTargetKeys, &r->fanTargetCount, 4, k);
+                } else if (k[2] == 'M' && k[3] == 'n') {
+                    add_temp_key(r->fanMinKeys, &r->fanMinCount, 4, k);
+                } else if (k[2] == 'M' && k[3] == 'x') {
+                    add_temp_key(r->fanMaxKeys, &r->fanMaxCount, 4, k);
+                }
+                continue;
+            }
             if (k[0] != 'T') continue;
             if (k[1] == 'p') {
                 add_temp_key(r->cpuKeys, &r->cpuKeyCount, SP_MAX_CPU_KEYS, k);
@@ -252,6 +306,19 @@ static void discover_temp_keys(SPReader *r) {
     if (r->gpuKeyCount == 0) {
         static const char *intel[] = {"Tg0D", "Tg0B", "Tg0P", "Tg0V", "TG0P", "TG0D"};
         for (int i = 0; i < 6; i++) add_temp_key(r->gpuKeys, &r->gpuKeyCount, SP_MAX_GPU_KEYS, intel[i]);
+    }
+    if (r->fanActualCount == 0) {
+        /* 枚举失败时退回常见键名 */
+        static const char *fixedActual[] = {"F0Ac", "F1Ac"};
+        static const char *fixedTarget[] = {"F0Tg", "F1Tg"};
+        static const char *fixedMin[] = {"F0Mn", "F1Mn"};
+        static const char *fixedMax[] = {"F0Mx", "F1Mx"};
+        for (int i = 0; i < 2; i++) {
+            add_temp_key(r->fanActualKeys, &r->fanActualCount, 4, fixedActual[i]);
+            add_temp_key(r->fanTargetKeys, &r->fanTargetCount, 4, fixedTarget[i]);
+            add_temp_key(r->fanMinKeys, &r->fanMinCount, 4, fixedMin[i]);
+            add_temp_key(r->fanMaxKeys, &r->fanMaxCount, 4, fixedMax[i]);
+        }
     }
     if (r->ssdKeyCount == 0) {
         static const char *fixed[] = {"TH0x", "TH0a", "TH0b", "TH0c", "TH0d", "TH0e", "TH0f", "TH0P"};
@@ -541,6 +608,28 @@ int32_t sp_reader_smc_key_exists(SPReader *reader, const char *key) {
     return type == SMC_KEY_FLT ? 1 : 0;
 }
 
+int32_t sp_reader_dump_fan_keys(SPReader *reader, char *buffer, int32_t size) {
+    if (!reader || !reader->smcReady || !buffer || size <= 1) return 0;
+    buffer[0] = '\0';
+    int used = 0;
+    for (int i = 0; i < reader->fanKeyCount; i++) {
+        double value = 0;
+        int ok = smc_read_fan_value(reader->smcConnection, reader->fanKeys[i], &value);
+        char line[96];
+        if (ok == 0) {
+            snprintf(line, sizeof line, "%s = %.2f\n", reader->fanKeys[i], value);
+        } else {
+            snprintf(line, sizeof line, "%s = （无法解码，err=%d）\n", reader->fanKeys[i], ok);
+        }
+        int len = (int)strlen(line);
+        if (used + len >= size - 1) break;
+        memcpy(buffer + used, line, (size_t)len);
+        used += len;
+        buffer[used] = '\0';
+    }
+    return used;
+}
+
 int32_t sp_reader_read(SPReader *reader, SPReading *out) {
     if (!reader || !out) return -1;
 
@@ -628,20 +717,40 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
             out->platformTempC = smc_first_temp(reader->smcConnection, platformKeys, 4);
         }
 
-        /* 风扇转速：F0Ac = 实际转速，F0Mn / F0Mx = 最小 / 最大 */
+        /* 风扇：所有 F?Ac 取最大值，F?Mn / F?Mx / F?Tg 取第一或最大 */
         {
-            double rpm = 0;
-            if (smc_read_number(reader->smcConnection, "F0Ac", &rpm) == 0
-                && rpm >= 0 && rpm <= 20000) {
+            double best = NAN, target = NAN, mn = NAN, mx = NAN;
+            int count = 0;
+            for (int i = 0; i < reader->fanActualCount; i++) {
+                double rpm = 0;
+                if (smc_read_fan_value(reader->smcConnection, reader->fanActualKeys[i], &rpm) == 0
+                    && rpm >= 0 && rpm <= 20000) {
+                    count++;
+                    if (isnan(best) || rpm > best) best = rpm;
+                }
+            }
+            for (int i = 0; i < reader->fanTargetCount; i++) {
+                double v = 0;
+                if (smc_read_fan_value(reader->smcConnection, reader->fanTargetKeys[i], &v) == 0
+                    && v >= 0 && v <= 20000) { target = v; break; }
+            }
+            for (int i = 0; i < reader->fanMinCount; i++) {
+                double v = 0;
+                if (smc_read_fan_value(reader->smcConnection, reader->fanMinKeys[i], &v) == 0
+                    && v >= 0 && v <= 20000) { mn = v; break; }
+            }
+            for (int i = 0; i < reader->fanMaxCount; i++) {
+                double v = 0;
+                if (smc_read_fan_value(reader->smcConnection, reader->fanMaxKeys[i], &v) == 0
+                    && v >= 0 && v <= 20000) { mx = v; break; }
+            }
+            if (!isnan(best)) {
                 out->fanAvailable = 1;
-                out->fanRPM = rpm;
-                double mn = 0, mx = 0;
-                if (smc_read_number(reader->smcConnection, "F0Mn", &mn) == 0 && mn >= 0) {
-                    out->fanMinRPM = mn;
-                }
-                if (smc_read_number(reader->smcConnection, "F0Mx", &mx) == 0 && mx >= 0) {
-                    out->fanMaxRPM = mx;
-                }
+                out->fanCount = count;
+                out->fanRPM = best;
+                out->fanTargetRPM = target;
+                out->fanMinRPM = mn;
+                out->fanMaxRPM = mx;
             }
         }
 

@@ -126,8 +126,10 @@ public struct DemoGenerator {
             batteryTempC: batteryTemp,
             platformTempC: platformTemp,
             fanRPM: fan,
+            fanCount: 2,
             fanMinRPM: 1700,
             fanMaxRPM: 4900,
+            fanTargetRPM: fan,
             source: .synthetic
         )
     }

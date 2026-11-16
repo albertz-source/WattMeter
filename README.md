@@ -60,7 +60,7 @@ A 0.7 W dead band prevents sampling skew from being shown as battery supply.
 | Battery state / % / time left | IOKit `IOPowerSources` | event-driven | |
 | Adapter rating & name | `AdapterDetails` | on plug/unplug | |
 | Fallback telemetry | `PowerTelemetryData` | **≈20 s** | `SystemLoad` / `SystemPowerIn`, adapter loss |
-| Fan | AppleSMC `F0Ac`, `F0Mn`, `F0Mx` | sub-second | `flt` or `fpe2` payloads |
+| Fan | AppleSMC `F?Ac` / `F?Mn` / `F?Mx` / `F?Tg` | sub-second | keys are discovered at launch (names and `flt` / `fpe2` / `ui16` types differ per model); multiple fans report the maximum RPM |
 | Display backlight | AppleSMC `PDBR` / `PBwo` / `PBLR` | sub-second | only on Macs with an internal display |
 | USB-C output | AppleSMC `D1..D4 JV×JI`, else `PowerOutDetails` | sub-second | charging input channel is excluded |
 | Component temperatures | AppleSMC `Tp*` (CPU), `Tg*` (GPU), `TH0*` (SSD), `TB0*` (battery), `Ts0P` (platform) | sub-second | the app enumerates SMC keys at launch, because suffixes differ per model (e.g. M2 exposes `Tg0e/f/m/n/q/r` instead of `Tg0D`); unavailable components show “—” |
@@ -247,7 +247,8 @@ drag `WattMeter.app` into Applications.
 ./.build/bin/wattprobe --keys      # which SMC power/fan/backlight keys your model exposes
 ./.build/bin/wattprobe 20 1        # 20 samples, one per second
 ./.build/bin/wattprobe --split-test   # adapter/battery/charge split rules
-./.build/bin/wattprobe --battery      # full battery-machine diagnostic
+.build/bin/wattprobe --battery      # full battery-machine diagnostic
+./.build/bin/wattprobe --fans         # list every fan SMC key with its decoded value
 ```
 
 On a MacBook, `--battery` should normally show:

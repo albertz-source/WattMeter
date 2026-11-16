@@ -13,6 +13,7 @@ var asJSON = false
 var listKeys = false
 var splitTest = false
 var batteryReport = false
+var fanReport = false
 
 var positional: [String] = []
 var index = 1
@@ -27,6 +28,8 @@ while index < CommandLine.arguments.count {
         splitTest = true
     case "--battery":
         batteryReport = true
+    case "--fans":
+        fanReport = true
     case "--interval", "-i":
         index += 1
         if index < CommandLine.arguments.count, let v = Double(CommandLine.arguments[index]) {
@@ -90,6 +93,18 @@ if splitTest {
     exit(failed == 0 ? 0 : 1)
 }
 
+if fanReport {
+    let dump = reader.dumpFanKeys()
+    print("== 风扇 SMC 键 ==")
+    print(dump.isEmpty ? "未发现任何 F 开头的风扇键" : dump, terminator: dump.isEmpty ? "\n" : "")
+    if let r = reader.read() {
+        let bus = r.fanRPM.map { String(format: "%.0f RPM", $0) } ?? "—"
+        let count = r.fanCount.map(String.init) ?? "—"
+        print("识别到风扇: \(count) 个，当前 \(bus)，目标 \(r.fanTargetRPM.map { String(format: "%.0f", $0) } ?? "—") RPM")
+    }
+    exit(0)
+}
+
 if batteryReport {
     guard let r = reader.read() else {
         print("读取失败：没有可用数据")
@@ -119,7 +134,7 @@ if batteryReport {
     print("净功率: 电池 \(f(r.batteryPowerW)) W   适配器输入 \(f(r.adapterInputW)) W   整机 \(f(r.totalW)) W")
     print("分项: 系统 \(f(r.systemComponentW)) W   屏幕 \(f(r.displayPowerW)) W   接口 \(f(r.portPowerW)) W")
     print("温度: CPU \(f(r.cpuTempC, 1))  GPU \(f(r.gpuTempC, 1))  SSD \(f(r.ssdTempC, 1))  电池 \(f(r.batteryTempC, 1))  平台 \(f(r.platformTempC, 1))")
-    print("风扇: \(r.fanText) RPM")
+    print("风扇: \(r.fanText) RPM（\(r.fanCount ?? 0) 个）")
     let state: String
     if !r.hasBattery { state = "台式机（无电池）" }
     else if !r.onAC { state = "纯电池供电" }

@@ -91,10 +91,14 @@ public struct DashboardView: View {
 
     private var fanCaption: String {
         guard let latest = store.latest, latest.fanRPM != nil else { return L("无风扇或不可读") }
-        if let min = latest.fanMinRPM, let max = latest.fanMaxRPM {
-            return String(format: "SMC F0Ac · %.0f–%.0f RPM", min, max)
+        var parts: [String] = ["SMC"]
+        if let count = latest.fanCount, count > 1 {
+            parts.append("\(count) " + L("风扇"))
         }
-        return "SMC F0Ac"
+        if let min = latest.fanMinRPM, let max = latest.fanMaxRPM {
+            parts.append(String(format: "%.0f–%.0f RPM", min, max))
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var batteryCaption: String {
