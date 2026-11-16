@@ -243,6 +243,10 @@ git push origin v<版本>
 ./.build/bin/wattprobe --split-test  # 电源/电池/充电分流规则自检
 .build/bin/wattprobe --battery     # 电池机型完整诊断
 ./.build/bin/wattprobe --fans        # 列出所有风扇 SMC 键及其解码值
+
+# 安装后的 App 本体也能跑同样的诊断（不需要开发工具）
+/Applications/WattMeter.app/Contents/MacOS/WattMeter --fans
+/Applications/WattMeter.app/Contents/MacOS/WattMeter --battery
 ```
 
 在 MacBook 上，`--battery` 正常应该看到：

@@ -60,6 +60,13 @@ The right column contains loads only (system / display / ports).
 ./.build/bin/wattprobe --split-test   # 9 split-rule assertions
 ```
 
+The same diagnostics are built into the app binary, so they work right after installing the DMG:
+
+```bash
+/Applications/WattMeter.app/Contents/MacOS/WattMeter --fans
+/Applications/WattMeter.app/Contents/MacOS/WattMeter --battery
+```
+
 ## Install
 
 1. Download **WattMeter-1.2.2.dmg** below and open it.
@@ -78,7 +85,8 @@ The right column contains loads only (system / display / ports).
 3. **电池在流向图上始终显示**：左列固定为电源端口（上）+ 电池端口（下）；充电时光点自右向左流
    入电池，放电/混合供电时自左向右；纯电池供电同样有动画。
 4. **MacBook 电池适配**：有符号电流解码、拔电残留、混合供电符号、充电口不计入 USB-C 对外供电。
-5. 新增诊断：`wattprobe --battery`、`wattprobe --fans`、`wattprobe --split-test`。
+5. 新增诊断：`--battery`、`--fans`、`--split-test`，App 本体与 `wattprobe` 都能运行
+   （例如 `/Applications/WattMeter.app/Contents/MacOS/WattMeter --fans`）。
 
 安装：下载 DMG → 拖进「应用程序」→ 首次打开右键「打开」，或
 `xattr -dr com.apple.quarantine /Applications/WattMeter.app`。

@@ -249,6 +249,10 @@ drag `WattMeter.app` into Applications.
 ./.build/bin/wattprobe --split-test   # adapter/battery/charge split rules
 .build/bin/wattprobe --battery      # full battery-machine diagnostic
 ./.build/bin/wattprobe --fans         # list every fan SMC key with its decoded value
+
+# The installed app binary can run the same diagnostics (no developer tools needed)
+/Applications/WattMeter.app/Contents/MacOS/WattMeter --fans
+/Applications/WattMeter.app/Contents/MacOS/WattMeter --battery
 ```
 
 On a MacBook, `--battery` should normally show:

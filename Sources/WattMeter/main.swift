@@ -2,6 +2,21 @@ import AppKit
 import WattMeterCore
 import WattMeterUI
 
+// 命令行诊断（DMG 里的 App 也能直接跑，不需要开发工具）
+if CommandLine.arguments.contains("--fans") {
+    print(Diagnostics.fans())
+    exit(0)
+}
+if CommandLine.arguments.contains("--battery") {
+    print(Diagnostics.battery())
+    exit(0)
+}
+if CommandLine.arguments.contains("--split-test") {
+    let result = Diagnostics.splitTest()
+    print(result.text)
+    exit(result.failed == 0 ? 0 : 1)
+}
+
 // --login-item：命令行查看/开关登录项（便于验证与自动化）
 if CommandLine.arguments.contains("--login-item") {
     LoginItemController().handleCommandLine()
