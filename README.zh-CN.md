@@ -168,7 +168,8 @@ wattmeter/
 
 ## 6. 构建与运行
 
-环境要求：macOS 13+，已安装 Command Line Tools（`xcode-select --install`），不需要 Xcode。
+环境要求：**macOS 13 及以上**（Apple Silicon 与 Intel），已安装 Command Line Tools（`xcode-select --install`），
+不需要 Xcode。应用打包为通用二进制（arm64 + x86_64），部署目标 macOS 13.0。
 
 ```bash
 git clone https://github.com/albertz-source/WattMeter.git

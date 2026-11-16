@@ -170,7 +170,9 @@ Charging, discharging, battery standby and no-battery desktops each get a differ
 
 ## 6. Build & run
 
-Requirements: macOS 13+, Command Line Tools (`xcode-select --install`). Xcode is not required.
+Requirements: **macOS 13 or later** (Apple Silicon and Intel), Command Line Tools (`xcode-select --install`).
+Xcode is not required. The app is built as a universal binary (arm64 + x86_64) with a macOS 13.0
+deployment target.
 
 ```bash
 git clone https://github.com/albertz-source/WattMeter.git
