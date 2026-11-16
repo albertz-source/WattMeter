@@ -4,6 +4,7 @@
 
 A native macOS menu-bar power monitor. It shows real-time system power, how much of it comes from the power adapter versus the battery, plus fan speed — as a power-flow diagram and as time-series charts.
 
+- Runs on **Apple Silicon (M-series) and Intel Macs**, macOS 13 or later
 - Swift + SwiftUI + Swift Charts, no third-party dependencies
 - **No root, no kernel extension, no network access** — read-only IOKit/SMC access
 - Optional **launch at login** (`SMAppService.mainApp`, no helper process)
@@ -21,7 +22,7 @@ A native macOS menu-bar power monitor. It shows real-time system power, how much
 | Requirement | Implementation |
 | --- | --- |
 | Total power | Menu bar shows live system power; the panel shows a large readout from AppleSMC `PSTR` |
-| Where the power comes from | A Sankey-style flow diagram (adapter / battery on the left, system in the middle, four branches on the right) plus an adapter-vs-battery share bar |
+| Where the power comes from | A Sankey-style flow diagram: adapter and battery ports on the left, the system in the middle, loads on the right, plus an adapter-vs-battery share bar. The battery node is **always** present when a battery is installed |
 | Visualisation | Flow diagram; stacked area chart (adapter vs battery, 1 / 5 / 15 min); line chart of total power and net battery power in the main window |
 
 Also included: adapter DC input (with measured input voltage and current) and rated wattage, estimated wall power, battery percentage and time remaining, fan RPM, CPU / GPU / SSD / battery / platform temperatures, display backlight power, USB-C output power, and session energy (Wh).
@@ -33,8 +34,8 @@ Also included: adapter DC input (with measured input voltage and current) and ra
 When the adapter cannot cover the load — a 45 W charger on a 16-inch MacBook at full tilt, for
 example — macOS draws the difference from the battery. The diagram then shows **two sources on the
 left**: the adapter on top, the battery below, and two ribbons converging into the machine. The
-status pill reads “Hybrid power”, the source bar splits adapter/battery, and the charging branch on
-the right disappears (the battery is supplying, not charging).
+status pill reads “Hybrid power”, the source bar splits adapter/battery, and the battery port on the
+left shows “discharging” instead of charging.
 
 ![hybrid](docs/preview-panel-hybrid.png)
 
@@ -156,7 +157,7 @@ The visual language is inspired by [PowerLens](https://github.com/kinghhhin-desi
 | Panel | 400 × 680 pt dark frosted glass (`NSVisualEffectView` with `.popover` material, behind-window, darkAqua) |
 | Accents | mint `#6EE0C2` (power), amber `#F5C273` (battery), blue `#7DB0FA` (system), purple `#BA9CF5` (adapter/ports) |
 | Type | SF Rounded; 31 pt light primary readout, 19 pt medium row values, 9–10 pt captions |
-| Flow diagram | 364 × 180: source on the left, Mac in the middle, four branches on the right (system / display / ports / battery). Rounded bezier links with gradient, glow and dots flowing **from source to load**. Link width is fixed at 14 pt so the diagram does not jitter when readings change |
+| Flow diagram | 364 × 180: on the left, the adapter port on top and the battery port below (the battery is always drawn when one is installed); the Mac in the middle; loads on the right (system / display / ports). Rounded bezier links with gradient, glow and dots showing the direction of power. While charging, the battery link runs **right-to-left** (power flowing into the battery); while discharging or in hybrid mode it runs left-to-right. Link width is fixed at 14 pt so the diagram does not jitter when readings change |
 | Temperatures | CPU / GPU / SSD / battery chips in the panel; a full temperature card in the main window. Values turn amber above 65 °C and red above 80 °C |
 | Charts | Stacked area of adapter vs battery, plus a total/net-battery line chart in the main window |
 | Main window | 1020 × 832 pt (scrollable if the user shrinks it): flow diagram, stacked area chart, line chart, and adapter / battery / temperature cards |
@@ -173,9 +174,17 @@ battery-only mode is animated like every other mode.
 
 ## 6. Build & run
 
-Requirements: **macOS 13 or later** (Apple Silicon and Intel), Command Line Tools (`xcode-select --install`).
-Xcode is not required. The app is built as a universal binary (arm64 + x86_64) with a macOS 13.0
-deployment target.
+Requirements: **macOS 13 or later**, Command Line Tools (`xcode-select --install`). Xcode is not
+required. The app is built as a universal binary (arm64 + x86_64) with a macOS 13.0 deployment target.
+
+### Supported hardware
+
+| Hardware | Status |
+| --- | --- |
+| **Apple Silicon Macs (M1 / M2 / M3 / M4 / M5 family)** | Recommended; SMC power rails, fan, temperatures, battery and USB-C ports are read directly |
+| Intel Macs | Supported; falls back to `PowerTelemetryData` / IOPS when SMC keys are missing |
+| Mac desktops (Mac mini / Studio / Pro) | Supported; no battery or internal display, those rows show “—” |
+| macOS 13 / 14 / 15 and later | Supported by the same universal binary |
 
 ```bash
 git clone https://github.com/albertz-source/WattMeter.git

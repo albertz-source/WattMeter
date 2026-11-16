@@ -152,6 +152,7 @@ extension Localization {
         "电源输入 →": "Adapter →",
         "电池供电 →": "Battery →",
         "电池辅助 →": "Battery boost →",
+        "电池充电 ←": "Charging ←",
         "整机 W": "System W",
         "系统": "System",
         "屏幕": "Display",
@@ -205,6 +206,8 @@ extension Localization {
         "输入 ": "input ",
         "风扇 ": "fan ",
         "CPU ": "CPU ",
+        "左为供电源，中间为整机，右侧为系统 / 屏幕 / 接口的功率分配；流线圆点指示能量方向。":
+            "Ports on the left (adapter and battery), the system in the middle, loads on the right (system / display / ports); moving dots show the power-flow direction.",
         "左为供电源，中间为整机，右侧为系统 / 屏幕 / 接口 / 电池的功率分配；流线圆点指示能量方向。":
             "Sources on the left, the system in the middle, branches on the right (system / display / ports / battery); moving dots show the direction of power flow.",
         "正在读取功率…": "Reading power…",

@@ -38,16 +38,27 @@ public struct FlowDiagram: View {
     private var display: Double? { reading?.displayPowerW }
     private var ports: Double? { reading?.portPowerW }
 
-    /// 系统分项 = 总功率 − 屏幕 − 接口（和 PowerLens 的估算口径一致）
+    /// 系统分项 = 总功率 − 屏幕 − 接口
     private var system: Double { reading?.systemComponentW ?? 0 }
 
-    private var charging: Bool { hasBattery && onAC && (batteryPower ?? 0) > 0.05 }
-    private var standby: Bool { hasBattery && onAC && abs(batteryPower ?? 0) <= 0.05 }
-    private var discharging: Bool { hasBattery && (batteryPower ?? 0) < -0.05 }
-    /// 电源 + 电池同时供电（弱充电器 + 高负载）
-    private var hybrid: Bool { reading?.isHybrid ?? false }
     private var adapterToLoadW: Double { reading?.adapterToLoadW ?? 0 }
     private var batteryToLoadW: Double { reading?.batteryToLoadW ?? 0 }
+    private var chargeW: Double { reading?.chargeW ?? 0 }
+
+    /// 电池在给整机供电（含混合供电、纯电池）
+    private var batterySupplying: Bool { hasBattery && batteryToLoadW > 0.05 }
+    /// 电池正在被充电
+    private var batteryCharging: Bool { hasBattery && onAC && chargeW > 0.05 }
+    /// 接了电源、电池既不充也不放（已充满 / 待机）
+    private var batteryIdle: Bool { hasBattery && !batterySupplying && !batteryCharging }
+    private var hybrid: Bool { onAC && batterySupplying }
+
+    /// 电池对外/对内功率（用于节点读数和支路判断）
+    private var batteryFlowW: Double {
+        if batteryCharging { return chargeW }
+        if batterySupplying { return max(batteryToLoadW, abs(batteryPower ?? 0)) }
+        return abs(batteryPower ?? 0)
+    }
 
     private let systemTint = Palette.blue
     private let displayTint = Palette.purple
@@ -60,32 +71,28 @@ public struct FlowDiagram: View {
     private let centerNodeX: CGFloat = 159
     private let centerNodeWidth: CGFloat = 40
     private let rightNodeX: CGFloat = 324
-    private let rightNodeWidth: CGFloat = 40
 
-    // 混合供电时左侧两个节点的中心 y
-    private let hybridAdapterY: CGFloat = 52
-    private let hybridBatteryY: CGFloat = 128
+    // 左侧两个端口（电源在上、电池在下）的中心 y
+    private let adapterY: CGFloat = 52
+    private let batteryY: CGFloat = 128
+    private let centerY: CGFloat = 94
 
     // MARK: - 连线
 
-    /// 一条流线：辉光 + 渐变主体 + 描边 + 流动光点
-    /// 流线宽度固定，不随功率数值变化（避免读数跳动时线宽抖动）
-    private let flowWidth: CGFloat = 14
-
     private func link(from: CGPoint, to: CGPoint, watts: Double?, tint: Color,
                       muted: Bool = false, flowing: Bool = true) -> some View {
-        let width = flowWidth
+        let width: CGFloat = 14
         return ZStack {
             FlowLinkPath(start: from, end: to)
-                .stroke(tint.opacity(muted ? 0.04 : 0.13),
+                .stroke(tint.opacity(muted ? 0.05 : 0.13),
                         style: StrokeStyle(lineWidth: width + 8, lineCap: .round))
                 .blur(radius: 6)
 
             FlowLinkPath(start: from, end: to)
                 .stroke(
                     LinearGradient(
-                        colors: [tint.opacity(muted ? 0.05 : 0.34),
-                                 tint.opacity(muted ? 0.02 : 0.09)],
+                        colors: [tint.opacity(muted ? 0.06 : 0.34),
+                                 tint.opacity(muted ? 0.03 : 0.09)],
                         startPoint: .leading,
                         endPoint: .trailing
                     ),
@@ -93,7 +100,7 @@ public struct FlowDiagram: View {
                 )
 
             FlowLinkPath(start: from, end: to)
-                .stroke(tint.opacity(muted ? 0.10 : 0.38),
+                .stroke(tint.opacity(muted ? 0.12 : 0.38),
                         style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
 
             if flowing && !muted, (watts ?? 0) > 0.05 {
@@ -111,8 +118,7 @@ public struct FlowDiagram: View {
                                            dash: [2, 13], dashPhase: 0))
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { context in
-                // dashPhase 递增会让虚线反向（右→左）移动，这里取负值让光点顺着
-                // 路径从电源端流向负载端。
+                // dashPhase 递减才是沿路径前进；路径方向即能量方向
                 let phase = -CGFloat(context.date.timeIntervalSinceReferenceDate * 36)
                     .truncatingRemainder(dividingBy: 15)
                 FlowLinkPath(start: from, end: to)
@@ -128,15 +134,15 @@ public struct FlowDiagram: View {
     private func node(_ icon: String, _ tint: Color, _ x: CGFloat, _ y: CGFloat,
                       _ height: CGFloat, muted: Bool = false) -> some View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(LinearGradient(colors: [tint.opacity(muted ? 0.10 : 0.26), .white.opacity(0.03)],
+            .fill(LinearGradient(colors: [tint.opacity(muted ? 0.12 : 0.30), .white.opacity(0.03)],
                                  startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(tint.opacity(muted ? 0.12 : 0.28), lineWidth: 0.8))
+                .stroke(tint.opacity(muted ? 0.14 : 0.32), lineWidth: 0.8))
             .shadow(color: tint.opacity(muted ? 0.03 : 0.10), radius: 9, y: 2)
             .overlay(
                 Image(systemName: icon)
                     .font(.system(size: 19, weight: .light))
-                    .foregroundStyle(tint.opacity(muted ? 0.5 : 1))
+                    .foregroundStyle(tint.opacity(muted ? 0.55 : 1))
             )
             .frame(width: 40, height: height)
             .position(x: x + 20, y: y)
@@ -149,13 +155,13 @@ public struct FlowDiagram: View {
             Text(value)
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(muted ? 0.42 : 0.94))
+                .foregroundStyle(.white.opacity(muted ? 0.5 : 0.94))
             Text(name)
                 .font(.system(size: 9))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .frame(maxWidth: 104)
-                .foregroundStyle(tint.opacity(muted ? 0.42 : 0.82))
+                .foregroundStyle(tint.opacity(muted ? 0.55 : 0.82))
             if let detail {
                 Text(detail)
                     .font(.system(size: 8, weight: .medium, design: .rounded))
@@ -179,96 +185,118 @@ public struct FlowDiagram: View {
             nodes
         }
         .frame(width: 364, height: 180)
-        .help(L("左为供电源，中间为整机，右侧为系统 / 屏幕 / 接口 / 电池的功率分配；流线圆点指示能量方向。"))
+        .help(L("左为供电源，中间为整机，右侧为系统 / 屏幕 / 接口的功率分配；流线圆点指示能量方向。"))
     }
 
-    // 所有连线（在所有节点之下）
+    // MARK: 所有连线（在节点之下）
+
     private var links: some View {
         ZStack {
-            if hybrid {
-                // 电源在上、电池在下，两条流线汇入整机左侧
-                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: hybridAdapterY),
-                     to: CGPoint(x: centerNodeX, y: 78),
-                     watts: adapterToLoadW, tint: Palette.mint)
-                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: hybridBatteryY),
-                     to: CGPoint(x: centerNodeX, y: 112),
-                     watts: batteryToLoadW, tint: batteryTint)
-            } else if onAC {
-                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: 94),
-                     to: CGPoint(x: centerNodeX, y: 94),
-                     watts: total, tint: Palette.mint)
-            } else if hasBattery {
-                // 电池单独供电：即使 PSTR/电流读不到，也保留一条流线（有功率时才有点）
-                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: 94),
-                     to: CGPoint(x: centerNodeX, y: 94),
-                     watts: max(total, max(batteryToLoadW, abs(batteryPower ?? 0))),
-                     tint: batteryTint)
-            }
+            if hasBattery {
+                if onAC {
+                    // 电源在上、电池在下，两条端口都常驻
+                    link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: adapterY),
+                         to: CGPoint(x: centerNodeX, y: 78),
+                         watts: max(total, adapterToLoadW), tint: Palette.mint)
 
-            if onAC && !hybrid {
-                link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 52),
-                     to: CGPoint(x: rightNodeX, y: 24),
-                     watts: system, tint: systemTint)
-                link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 78),
-                     to: CGPoint(x: rightNodeX, y: 70),
-                     watts: display, tint: displayTint, muted: display == nil)
-                link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 104),
-                     to: CGPoint(x: rightNodeX, y: 115),
-                     watts: ports, tint: portTint, muted: ports == nil)
-                if charging {
-                    link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 130),
-                         to: CGPoint(x: rightNodeX, y: 160),
-                         watts: batteryPower, tint: batteryTint)
+                    if batteryCharging {
+                        // 充电：能量从整机流向电池（路径方向 = 能量方向）
+                        link(from: CGPoint(x: centerNodeX, y: 112),
+                             to: CGPoint(x: leftNodeX + leftNodeWidth, y: batteryY),
+                             watts: chargeW, tint: batteryTint)
+                    } else if batterySupplying {
+                        link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: batteryY),
+                             to: CGPoint(x: centerNodeX, y: 112),
+                             watts: batteryFlowW, tint: batteryTint)
+                    } else {
+                        // 已充满 / 待机：保留一条淡线表示连接，但无流动
+                        link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: batteryY),
+                             to: CGPoint(x: centerNodeX, y: 112),
+                             watts: 0, tint: batteryTint, muted: true, flowing: false)
+                    }
                 } else {
-                    link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 130),
-                         to: CGPoint(x: rightNodeX, y: 160),
-                         watts: nil, tint: batteryTint, muted: true, flowing: false)
+                    // 纯电池供电：电池是唯一来源
+                    link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: centerY),
+                         to: CGPoint(x: centerNodeX, y: centerY),
+                         watts: max(total, batteryFlowW), tint: batteryTint)
                 }
             } else {
-                link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 62),
-                     to: CGPoint(x: rightNodeX, y: 34),
-                     watts: system, tint: systemTint)
-                link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 104),
-                     to: CGPoint(x: rightNodeX, y: 106),
-                     watts: display, tint: displayTint, muted: display == nil)
-                link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 138),
-                     to: CGPoint(x: rightNodeX, y: 160),
-                     watts: ports, tint: portTint, muted: ports == nil)
+                // 台式机：只有电源
+                link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: centerY),
+                     to: CGPoint(x: centerNodeX, y: centerY),
+                     watts: max(total, adapterToLoadW), tint: Palette.mint)
             }
+
+            // 右侧：系统 / 屏幕 / 接口（始终三支）
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 62),
+                 to: CGPoint(x: rightNodeX, y: 34),
+                 watts: system, tint: systemTint)
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 104),
+                 to: CGPoint(x: rightNodeX, y: 106),
+                 watts: display, tint: displayTint, muted: display == nil)
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 138),
+                 to: CGPoint(x: rightNodeX, y: 160),
+                 watts: ports, tint: portTint, muted: ports == nil)
         }
         .frame(width: 364, height: 180)
     }
 
-    // 所有节点与标签
+    // MARK: 所有节点与标签
+
     private var nodes: some View {
         ZStack {
-            // 左侧供电源
-            if hybrid {
-                // 上：电源适配器；下：电池补足
-                node("powerplug.fill", Palette.mint, leftNodeX, hybridAdapterY, 64)
-                label(wattsText(adapterToLoadW), L("电源输入 →"), Palette.mint,
-                      96, hybridAdapterY, detail: reading?.inputRailsText)
-                node("battery.100percent", batteryTint, leftNodeX, hybridBatteryY, 64)
-                label(wattsText(batteryToLoadW), L("电池辅助 →"), batteryTint,
-                      96, hybridBatteryY, detail: L("放电中"))
-            } else if onAC {
-                node("powerplug.fill", Palette.mint, leftNodeX, 94, 84)
-                label(wattsText(adapterInput), L("电源输入 →"), Palette.mint,
-                      96, 94, detail: reading?.inputRailsText)
-            } else if hasBattery {
-                node("battery.100percent", batteryTint, leftNodeX, 94, 84)
-                let batterySourceW: Double? = batteryToLoadW > 0.05
-                    ? batteryToLoadW
-                    : batteryPower.map { abs($0) }
-                label(wattsText(batterySourceW), L("电池供电 →"), batteryTint, 96, 94,
-                      detail: discharging ? L("放电中") : nil)
-            } else {
-                node("powerplug.fill", Color.white.opacity(0.4), leftNodeX, 94, 84, muted: true)
-                label("—", L("等待数据 →"), Color.white.opacity(0.4), 96, 94, muted: true)
-            }
+            leftPorts
+            centerNode
+            rightBranches
+        }
+        .frame(width: 364, height: 180)
+    }
 
-            // 中央整机
-            node("laptopcomputer", .white.opacity(0.85), centerNodeX, 94, 112)
+    /// 左列：装上电池后，电源与电池两个端口常驻（纯电池时只显示电池）
+    @ViewBuilder
+    private var leftPorts: some View {
+        if hasBattery {
+            if onAC {
+                // 上：电源适配器
+                node("powerplug.fill", Palette.mint, leftNodeX, adapterY, 64)
+                label(wattsText(max(adapterToLoadW, adapterInput ?? 0)),
+                      L("电源输入 →"), Palette.mint, 96, adapterY,
+                      detail: reading?.inputRailsText)
+
+                // 下：电池（始终存在）
+                node("battery.100percent", batteryTint, leftNodeX, batteryY, 64)
+                label(wattsText(batteryFlowW), batteryName, batteryTint, 96, batteryY,
+                      detail: batteryDetail)
+            } else {
+                node("battery.100percent", batteryTint, leftNodeX, centerY, 84)
+                label(wattsText(max(batteryFlowW, batteryToLoadW)), L("电池供电 →"),
+                      batteryTint, 96, centerY, detail: L("放电中"))
+            }
+        } else {
+            node("powerplug.fill", Palette.mint, leftNodeX, centerY, 84)
+            label(wattsText(max(total, adapterToLoadW)), L("电源输入 →"), Palette.mint,
+                  96, centerY, detail: reading?.inputRailsText)
+        }
+    }
+
+    private var batteryName: String {
+        if batteryCharging { return L("电池充电 ←") }
+        if batterySupplying { return L("电池辅助 →") }
+        return L("电池待机")
+    }
+
+    private var batteryDetail: String? {
+        if batteryCharging { return L("充电中") }
+        if batterySupplying { return L("放电中") }
+        if let percent = reading?.batteryPercent {
+            return String(format: "%.0f%%", percent)
+        }
+        return nil
+    }
+
+    private var centerNode: some View {
+        Group {
+            node("laptopcomputer", .white.opacity(0.85), centerNodeX, centerY, 112)
             Text(PowerFormat.watts(total))
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .monospacedDigit()
@@ -278,44 +306,18 @@ public struct FlowDiagram: View {
                 .font(.system(size: 8))
                 .foregroundStyle(.white.opacity(0.45))
                 .position(x: centerNodeX + 20, y: 136)
-
-            // 右侧分支
-            if onAC && !hybrid {
-                node("cpu", systemTint, rightNodeX, 24, 40)
-                label(wattsText(system), L("系统"), systemTint, 261, 24)
-
-                node("display", displayTint, rightNodeX, 70, 32, muted: display == nil)
-                label(wattsText(display), L("屏幕"), displayTint, 261, 70, muted: display == nil)
-
-                node("cable.connector", portTint, rightNodeX, 115, 32, muted: ports == nil)
-                label(wattsText(ports), L("接口"), portTint, 261, 115, muted: ports == nil)
-
-                batteryNode
-            } else {
-                node("cpu", systemTint, rightNodeX, 34, 50)
-                label(wattsText(system), L("系统"), systemTint, 261, 34)
-
-                node("display", displayTint, rightNodeX, 106, 34, muted: display == nil)
-                label(wattsText(display), L("屏幕"), displayTint, 261, 106, muted: display == nil)
-
-                node("cable.connector", portTint, rightNodeX, 160, 34, muted: ports == nil)
-                label(wattsText(ports), L("接口"), portTint, 261, 160, muted: ports == nil)
-            }
         }
-        .frame(width: 364, height: 180)
     }
 
     @ViewBuilder
-    private var batteryNode: some View {
-        if charging {
-            node("battery.100percent", batteryTint, rightNodeX, 160, 32)
-            label(wattsText(batteryPower), L("电池充电 →"), batteryTint, 261, 160)
-        } else if hasBattery {
-            node("battery.100percent", batteryTint.opacity(0.7), rightNodeX, 160, 32, muted: true)
-            label(standby ? "0.0 W" : "—", L("电池待机"), batteryTint, 261, 160, muted: true)
-        } else {
-            node("battery.0percent", Color.white.opacity(0.4), rightNodeX, 160, 32, muted: true)
-            label("—", L("无内置电池"), Color.white.opacity(0.4), 261, 160, muted: true)
-        }
+    private var rightBranches: some View {
+        node("cpu", systemTint, rightNodeX, 34, 50)
+        label(wattsText(system), L("系统"), systemTint, 261, 34)
+
+        node("display", displayTint, rightNodeX, 106, 34, muted: display == nil)
+        label(wattsText(display), L("屏幕"), displayTint, 261, 106, muted: display == nil)
+
+        node("cable.connector", portTint, rightNodeX, 160, 34, muted: ports == nil)
+        label(wattsText(ports), L("接口"), portTint, 261, 160, muted: ports == nil)
     }
 }
