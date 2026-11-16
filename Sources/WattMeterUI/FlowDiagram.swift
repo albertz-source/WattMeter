@@ -193,14 +193,16 @@ public struct FlowDiagram: View {
                 link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: hybridBatteryY),
                      to: CGPoint(x: centerNodeX, y: 112),
                      watts: batteryToLoadW, tint: batteryTint)
-            } else if onAC, adapterInput != nil {
+            } else if onAC {
                 link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: 94),
                      to: CGPoint(x: centerNodeX, y: 94),
                      watts: total, tint: Palette.mint)
-            } else if hasBattery, discharging {
+            } else if hasBattery {
+                // 电池单独供电：即使 PSTR/电流读不到，也保留一条流线（有功率时才有点）
                 link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: 94),
                      to: CGPoint(x: centerNodeX, y: 94),
-                     watts: total, tint: batteryTint)
+                     watts: max(total, max(batteryToLoadW, abs(batteryPower ?? 0))),
+                     tint: batteryTint)
             }
 
             if onAC && !hybrid {
@@ -255,7 +257,11 @@ public struct FlowDiagram: View {
                       96, 94, detail: reading?.inputRailsText)
             } else if hasBattery {
                 node("battery.100percent", batteryTint, leftNodeX, 94, 84)
-                label(wattsText(batteryPower.map { abs($0) }), L("电池供电 →"), batteryTint, 96, 94)
+                let batterySourceW: Double? = batteryToLoadW > 0.05
+                    ? batteryToLoadW
+                    : batteryPower.map { abs($0) }
+                label(wattsText(batterySourceW), L("电池供电 →"), batteryTint, 96, 94,
+                      detail: discharging ? L("放电中") : nil)
             } else {
                 node("powerplug.fill", Color.white.opacity(0.4), leftNodeX, 94, 84, muted: true)
                 label("—", L("等待数据 →"), Color.white.opacity(0.4), 96, 94, muted: true)

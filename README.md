@@ -164,7 +164,10 @@ The visual language is inspired by [PowerLens](https://github.com/kinghhhin-desi
 | Launch at login | Toggle in the panel footer or the right-click menu. Uses `SMAppService.mainApp`; macOS may ask for approval in System Settings → General → Login Items |
 | Menu bar | Monospaced digits, width auto-fitted, detailed tooltip, single-instance guard |
 
-Charging, discharging, battery standby and no-battery desktops each get a different diagram layout; branches without telemetry are dimmed instead of being hidden.
+Charging, discharging, battery standby and no-battery desktops each get a different diagram layout;
+branches without telemetry are dimmed instead of being hidden. Whenever a battery is installed it is
+always present on the diagram (right side while charging, left side while supplying), and the
+battery-only mode is animated like every other mode.
 
 ---
 

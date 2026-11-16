@@ -96,6 +96,11 @@ public final class PowerReader {
             adapterInW = nil
         }
 
+        // 整机功率读不到时，用电池放电功率回推（电池供电场景）
+        if systemW == nil, !onAC, let batteryW, batteryW < -0.05 {
+            systemW = -batteryW
+        }
+
         // 混合供电：电池在放电，净功率必须是负值（修正个别机型的符号/标志不一致）
         if var battery = batteryW, battery > 0.05,
            split.batteryToLoad > 0.5, raw.isCharging == 0 {

@@ -8,6 +8,13 @@
   the build machine's macOS version.
 - **Universal binary**: arm64 + x86_64, so it also runs on Intel Macs.
 
+## Battery visibility
+
+- When a battery is installed it is **always** shown on the flow diagram: on the right while charging
+  or idle on AC, on the left while supplying (including hybrid and battery-only modes).
+- Battery-only mode now animates the flow as well; the battery → machine link keeps its moving dots
+  even if the total power reading is momentarily unavailable.
+
 ## Verification
 
 ```
