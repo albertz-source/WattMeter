@@ -131,6 +131,12 @@ public struct PowerReading: Identifiable, Sendable {
         return String(format: "%.0f", fanRPM)
     }
 
+    /// 风扇是否已停转（M3/M4 空闲时热管理会完全关闭风扇，属正常现象）
+    public var fanStopped: Bool {
+        guard let fanRPM else { return false }
+        return fanRPM < 1 && (fanMinRPM ?? 0) > 0
+    }
+
     /// 是否处于「电源 + 电池」混合供电（弱充电器无法单独满足负载，电池补足）
     public var isHybrid: Bool {
         hasBattery && onAC && batteryToLoadW > 0.5

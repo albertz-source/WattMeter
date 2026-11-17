@@ -112,6 +112,8 @@ extension Localization {
         "电池净功率": "Net battery power",
         "风扇转速": "Fan speed",
         "无风扇或不可读": "No fan / unavailable",
+        "已停转": "stopped",
+        "已停转（空闲时正常）": "stopped (normal when idle)",
         "DC 输入 · SMC 实时": "DC input · SMC live",
         "DC 输入 · 系统遥测": "DC input · system telemetry",
         "完整窗口": "Full window",

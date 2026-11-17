@@ -20,6 +20,9 @@ public enum Diagnostics {
             if let min = r.fanMinRPM, let max = r.fanMaxRPM {
                 lines.append(String(format: "转速范围: %.0f–%.0f RPM", min, max))
             }
+            if let rpm = r.fanRPM, rpm < 1, (r.fanMinRPM ?? 0) > 0 {
+                lines.append("提示: 当前风扇转速为 0 —— M3/M4 MacBook 空闲时热管理会完全停转，属正常现象。")
+            }
             if r.fanRPM == nil {
                 lines.append("提示: 没有可解码的 F?Ac 键，请把上面的键列表反馈给作者。")
             }

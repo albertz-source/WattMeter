@@ -95,6 +95,9 @@ public struct DashboardView: View {
         if let count = latest.fanCount, count > 1 {
             parts.append("\(count) " + L("风扇"))
         }
+        if latest.fanStopped {
+            parts.append(L("已停转"))
+        }
         if let min = latest.fanMinRPM, let max = latest.fanMaxRPM {
             parts.append(String(format: "%.0f–%.0f RPM", min, max))
         }

@@ -285,8 +285,8 @@ public final class PowerReader {
     /// 导出所有风扇相关 SMC 键（诊断用）
     public func dumpFanKeys() -> String {
         guard let handle else { return "" }
-        var buffer = [CChar](repeating: 0, count: 4096)
-        let written = sp_reader_dump_fan_keys(handle, &buffer, 4096)
+        var buffer = [CChar](repeating: 0, count: 16384)
+        let written = sp_reader_dump_fan_keys(handle, &buffer, 16384)
         guard written > 0 else { return "" }
         return String(cString: buffer)
     }

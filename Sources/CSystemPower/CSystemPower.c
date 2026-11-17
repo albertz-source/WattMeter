@@ -77,7 +77,7 @@ struct SPReader {
     char ssdKeys[SP_MAX_SSD_KEYS][5];
     int  ssdKeyCount;
     /* 风扇键：不同机型命名/类型不同，也做一次枚举 */
-    char fanKeys[24][5];       /* 所有 F 开头键（诊断用） */
+    char fanKeys[64][5];       /* 所有 F 开头键（诊断用） */
     int  fanKeyCount;
     char fanActualKeys[4][5];  /* F?Ac 实际转速 */
     int  fanActualCount;
@@ -275,9 +275,9 @@ static void discover_temp_keys(SPReader *r) {
         for (int i = 0; i < n; i++) {
             char k[5];
             if (smc_key_at(r->smcConnection, i, k) != 0) continue;
-            if (k[0] == 'F' && r->fanKeyCount < 24) {
+            if (k[0] == 'F' && r->fanKeyCount < 64) {
                 memcpy(r->fanKeys[r->fanKeyCount++], k, 5);
-                if (k[2] == 'A' && k[3] == 'c') {
+                if (k[2] == 'A' && (k[3] == 'c' || k[3] == 'C')) {
                     add_temp_key(r->fanActualKeys, &r->fanActualCount, 4, k);
                 } else if (k[2] == 'T' && k[3] == 'g') {
                     add_temp_key(r->fanTargetKeys, &r->fanTargetCount, 4, k);
@@ -309,7 +309,7 @@ static void discover_temp_keys(SPReader *r) {
     }
     if (r->fanActualCount == 0) {
         /* 枚举失败时退回常见键名 */
-        static const char *fixedActual[] = {"F0Ac", "F1Ac"};
+        static const char *fixedActual[] = {"F0Ac", "F0AC", "F1Ac", "F1AC"};
         static const char *fixedTarget[] = {"F0Tg", "F1Tg"};
         static const char *fixedMin[] = {"F0Mn", "F1Mn"};
         static const char *fixedMax[] = {"F0Mx", "F1Mx"};
@@ -608,18 +608,63 @@ int32_t sp_reader_smc_key_exists(SPReader *reader, const char *key) {
     return type == SMC_KEY_FLT ? 1 : 0;
 }
 
+static void format_fan_key_line(io_connect_t conn, const char *key, char *line, size_t lineSize) {
+    uint32_t type = 0;
+    uint8_t  ksize = 0;
+    if (smc_key_info(conn, key, &type, &ksize) != 0) {
+        snprintf(line, lineSize, "%-4s  （读不到 keyInfo，键可能不存在）\n", key);
+        return;
+    }
+    uint8_t raw[32] = {0};
+    smc_read_raw(conn, key, raw, ksize);
+    char typeStr[5] = {
+        (char)(type >> 24), (char)((type >> 16) & 0xff),
+        (char)((type >> 8) & 0xff), (char)(type & 0xff), 0
+    };
+    char hex[3 * 16 + 4] = {0};
+    int hexUsed = 0;
+    int shown = ksize > 16 ? 16 : ksize;
+    for (int b = 0; b < shown; b++) {
+        hexUsed += snprintf(hex + hexUsed, sizeof hex - (size_t)hexUsed, "%02x", raw[b]);
+    }
+    double value = 0;
+    int ok = smc_read_fan_value(conn, key, &value);
+    if (ok == 0) {
+        snprintf(line, lineSize, "%-4s type='%s' size=%d raw=%s  value=%.2f\n",
+                 key, typeStr, ksize, hex, value);
+    } else {
+        snprintf(line, lineSize, "%-4s type='%s' size=%d raw=%s  （无法解码 err=%d）\n",
+                 key, typeStr, ksize, hex, ok);
+    }
+}
+
 int32_t sp_reader_dump_fan_keys(SPReader *reader, char *buffer, int32_t size) {
     if (!reader || !reader->smcReady || !buffer || size <= 1) return 0;
     buffer[0] = '\0';
     int used = 0;
     for (int i = 0; i < reader->fanKeyCount; i++) {
-        double value = 0;
-        int ok = smc_read_fan_value(reader->smcConnection, reader->fanKeys[i], &value);
-        char line[96];
-        if (ok == 0) {
-            snprintf(line, sizeof line, "%s = %.2f\n", reader->fanKeys[i], value);
-        } else {
-            snprintf(line, sizeof line, "%s = （无法解码，err=%d）\n", reader->fanKeys[i], ok);
+        char line[256];
+        format_fan_key_line(reader->smcConnection, reader->fanKeys[i], line, sizeof line);
+        int len = (int)strlen(line);
+        if (used + len >= size - 1) break;
+        memcpy(buffer + used, line, (size_t)len);
+        used += len;
+        buffer[used] = '\0';
+    }
+
+    /* 枚举不到的候选键也直接试一下（某些机型会隐藏风扇键） */
+    static const char *candidates[] = {"F0Ac", "F0AC", "F1Ac", "F1AC"};
+    for (int c = 0; c < 4; c++) {
+        int already = 0;
+        for (int i = 0; i < reader->fanKeyCount; i++) {
+            if (strcmp(reader->fanKeys[i], candidates[c]) == 0) { already = 1; break; }
+        }
+        if (already) continue;
+        char line[256];
+        format_fan_key_line(reader->smcConnection, candidates[c], line, sizeof line);
+        /* 键完全不存在时只提示一行，避免噪音 */
+        if (strstr(line, "读不到 keyInfo") != NULL) {
+            snprintf(line, sizeof line, "%-4s  （未枚举到，直接读取失败）\n", candidates[c]);
         }
         int len = (int)strlen(line);
         if (used + len >= size - 1) break;

@@ -195,7 +195,7 @@ public struct MainWindowView: View {
                     powerRow("square.stack.3d.up", L("平台"), "Ts0P",
                              tempText(store.latest?.platformTempC), "°C", Palette.muted)
                     Divider().opacity(0.18)
-                    powerRow("fan", L("风扇"), "SMC F0Ac", store.latest?.fanText ?? "—", "RPM", Palette.blue)
+                    powerRow("fan", L("风扇"), fanRowCaption, store.latest?.fanText ?? "—", "RPM", Palette.blue)
                 }
             }
 
@@ -218,6 +218,15 @@ public struct MainWindowView: View {
             return rails
         }
         return store.latest.map { L($0.source.label) } ?? "—"
+    }
+
+    private var fanRowCaption: String {
+        guard let latest = store.latest, latest.fanRPM != nil else { return L("无风扇或不可读") }
+        if latest.fanStopped { return L("已停转（空闲时正常）") }
+        if let target = latest.fanTargetRPM, target > 0 {
+            return String(format: "SMC · 目标 %.0f RPM", target)
+        }
+        return "SMC F0Ac"
     }
 
     private func tempText(_ value: Double?) -> String {
