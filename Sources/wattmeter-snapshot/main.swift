@@ -67,9 +67,11 @@ MainActor.assumeIsolated {
     case "charging": endPhase = 70   // 接电源 + 充电
     case "ac":       endPhase = 90   // 接电源 + 已充满
     case "hybrid":   endPhase = 50   // 45W 适配器 + 高负载 → 电池补足
+    case "nochip":   endPhase = 90   // 预览「拿不到芯片分项」时的布局
     default:         endPhase = nil
     }
-    store.loadPreview(samples: DemoGenerator.history(seconds: 300, endPhase: endPhase))
+    store.loadPreview(samples: DemoGenerator.history(seconds: 300, endPhase: endPhase,
+                                                     includeChips: stateName != "nochip"))
 
     let content: AnyView
     if viewName == "main" {

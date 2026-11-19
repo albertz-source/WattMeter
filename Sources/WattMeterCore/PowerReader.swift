@@ -205,10 +205,10 @@ public final class PowerReader {
             timeRemainingMinutes: remaining,
             displayPowerW: displayW,
             portPowerW: portW,
-            cpuPowerW: raw.cpuPowerAvailable != 0 ? max(0, raw.cpuPowerW) : nil,
-            gpuPowerW: raw.gpuPowerAvailable != 0 ? max(0, raw.gpuPowerW) : nil,
-            anePowerW: raw.anePowerAvailable != 0 ? max(0, raw.anePowerW) : nil,
-            dramPowerW: raw.dramPowerAvailable != 0 ? max(0, raw.dramPowerW) : nil,
+            cpuPowerW: chipPower(raw, available: raw.cpuPowerAvailable, value: raw.cpuPowerW),
+            gpuPowerW: chipPower(raw, available: raw.gpuPowerAvailable, value: raw.gpuPowerW),
+            anePowerW: chipPower(raw, available: raw.anePowerAvailable, value: raw.anePowerW),
+            dramPowerW: chipPower(raw, available: raw.dramPowerAvailable, value: raw.dramPowerW),
             inputVoltageV: inputV,
             inputCurrentA: inputA,
             batteryVoltageV: batteryVoltageV,
@@ -319,6 +319,12 @@ public final class PowerReader {
     public func smcHasKey(_ key: String) -> Bool {
         guard let handle else { return false }
         return sp_reader_smc_key_exists(handle, key) != 0
+    }
+
+    /// 分项功率：通道存在且读数合理才返回，否则视为「没法获取」（界面会隐藏该分项）。
+    private func chipPower(_ raw: SPReading, available: Int32, value: Double) -> Double? {
+        guard available != 0, value.isFinite, value >= 0.01, value < 600 else { return nil }
+        return value
     }
 
     /// 把电流符号的实测值，按“充电为正、放电为负”归一化。

@@ -44,6 +44,15 @@ public struct FlowDiagram: View {
     private var gpuPower: Double? { reading?.gpuPowerW }
     private var anePower: Double? { reading?.anePowerW }
 
+    /// 当前能拿到的芯片分项（拿不到的整项隐藏）
+    private var chipItems: [(name: String, watts: Double)] {
+        [("CPU", cpuPower), ("GPU", gpuPower), ("ANE", anePower)]
+            .compactMap { item in
+                guard let w = item.1 else { return nil }
+                return (item.0, w)
+            }
+    }
+
     private var adapterToLoadW: Double { reading?.adapterToLoadW ?? 0 }
     private var batteryToLoadW: Double { reading?.batteryToLoadW ?? 0 }
     private var chargeW: Double { reading?.chargeW ?? 0 }
@@ -258,23 +267,24 @@ public struct FlowDiagram: View {
             }
 
             // 右侧：系统（再分 CPU / GPU / ANE） + 屏幕 / 接口
-            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 62),
-                 to: CGPoint(x: systemNodeX, y: 62),
+            let mainSystemX: CGFloat = chipItems.isEmpty ? rightNodeX : systemNodeX
+            let mainSystemY: CGFloat = chipItems.isEmpty ? 34 : 62
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: mainSystemY),
+                 to: CGPoint(x: mainSystemX, y: mainSystemY),
                  watts: system, tint: systemTint)
-            link(from: CGPoint(x: systemNodeX + systemNodeW, y: 62),
-                 to: CGPoint(x: chipNodeX, y: 28),
-                 watts: cpuPower, tint: systemTint, muted: cpuPower == nil)
-            link(from: CGPoint(x: systemNodeX + systemNodeW, y: 62),
-                 to: CGPoint(x: chipNodeX, y: 62),
-                 watts: gpuPower, tint: systemTint, muted: gpuPower == nil)
-            link(from: CGPoint(x: systemNodeX + systemNodeW, y: 62),
-                 to: CGPoint(x: chipNodeX, y: 96),
-                 watts: anePower, tint: systemTint, muted: anePower == nil)
+            if !chipItems.isEmpty {
+                ForEach(Array(chipItems.enumerated()), id: \.offset) { index, item in
+                    link(from: CGPoint(x: systemNodeX + systemNodeW, y: 62),
+                         to: CGPoint(x: chipNodeX, y: chipY(index, of: chipItems.count)),
+                         watts: item.watts, tint: systemTint)
+                }
+            }
+            let sideX: CGFloat = chipItems.isEmpty ? rightNodeX : systemNodeX
             link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 116),
-                 to: CGPoint(x: systemNodeX, y: 116),
+                 to: CGPoint(x: sideX, y: 116),
                  watts: display, tint: displayTint, muted: display == nil)
             link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 150),
-                 to: CGPoint(x: systemNodeX, y: 150),
+                 to: CGPoint(x: sideX, y: 150),
                  watts: ports, tint: portTint, muted: ports == nil)
         }
         .frame(width: 364, height: 180)
@@ -348,30 +358,44 @@ public struct FlowDiagram: View {
         }
     }
 
+    private func chipY(_ index: Int, of count: Int) -> CGFloat {
+        let spacing: CGFloat = 34
+        let middle = (Double(count) - 1) / 2
+        return 62 + CGFloat(Double(index) - middle) * spacing
+    }
+
     @ViewBuilder
     private var rightBranches: some View {
-        // 系统（CPU + GPU + ANE + 其他）
-        chipNode(L("系统"), PowerFormat.watts(system), tint: systemTint,
-                 center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 62),
-                 size: CGSize(width: systemNodeW, height: 36))
+        if !chipItems.isEmpty {
+            // 两列：系统 → CPU / GPU / ANE，另加屏幕 / 接口
+            chipNode(L("系统"), PowerFormat.watts(system), tint: systemTint,
+                     center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 62),
+                     size: CGSize(width: systemNodeW, height: 36))
 
-        // 芯片分项
-        chipNode("CPU", PowerFormat.watts(cpuPower), tint: systemTint,
-                 center: CGPoint(x: chipNodeX + chipNodeW / 2, y: 28),
-                 size: CGSize(width: chipNodeW, height: 20), muted: cpuPower == nil)
-        chipNode("GPU", PowerFormat.watts(gpuPower), tint: systemTint,
-                 center: CGPoint(x: chipNodeX + chipNodeW / 2, y: 62),
-                 size: CGSize(width: chipNodeW, height: 20), muted: gpuPower == nil)
-        chipNode("ANE", PowerFormat.watts(anePower), tint: systemTint,
-                 center: CGPoint(x: chipNodeX + chipNodeW / 2, y: 96),
-                 size: CGSize(width: chipNodeW, height: 20), muted: anePower == nil)
+            ForEach(Array(chipItems.enumerated()), id: \.offset) { index, item in
+                chipNode(item.name, PowerFormat.watts(item.watts), tint: systemTint,
+                         center: CGPoint(x: chipNodeX + chipNodeW / 2,
+                                         y: chipY(index, of: chipItems.count)),
+                         size: CGSize(width: chipNodeW, height: 20))
+            }
 
-        // 屏幕 / 接口
-        chipNode(L("屏幕"), PowerFormat.watts(display), tint: displayTint,
-                 center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 116),
-                 size: CGSize(width: systemNodeW, height: 22), muted: display == nil)
-        chipNode(L("接口"), PowerFormat.watts(ports), tint: portTint,
-                 center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 150),
-                 size: CGSize(width: systemNodeW, height: 22), muted: ports == nil)
+            chipNode(L("屏幕"), PowerFormat.watts(display), tint: displayTint,
+                     center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 116),
+                     size: CGSize(width: systemNodeW, height: 22), muted: display == nil)
+            chipNode(L("接口"), PowerFormat.watts(ports), tint: portTint,
+                     center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 150),
+                     size: CGSize(width: systemNodeW, height: 22), muted: ports == nil)
+        } else {
+            // 拿不到分项功率：回到三支布局
+            chipNode(L("系统"), PowerFormat.watts(system), tint: systemTint,
+                     center: CGPoint(x: rightNodeX + 17, y: 34),
+                     size: CGSize(width: 34, height: 32))
+            chipNode(L("屏幕"), PowerFormat.watts(display), tint: displayTint,
+                     center: CGPoint(x: rightNodeX + 17, y: 106),
+                     size: CGSize(width: 34, height: 26), muted: display == nil)
+            chipNode(L("接口"), PowerFormat.watts(ports), tint: portTint,
+                     center: CGPoint(x: rightNodeX + 17, y: 160),
+                     size: CGSize(width: 34, height: 26), muted: ports == nil)
+        }
     }
 }

@@ -10,11 +10,15 @@ public struct DemoGenerator {
     private var rng: SeededRandom
     private var tick: Int = 0
     public let interval: TimeInterval
+    /// 生成读数时是否包含芯片分项功率（用于预览「拿不到分项」的布局）
+    public let includeChips: Bool
 
-    public init(seed: UInt64 = 0x5EED_1234, interval: TimeInterval = 1.0, startTick: Int = 0) {
+    public init(seed: UInt64 = 0x5EED_1234, interval: TimeInterval = 1.0,
+                startTick: Int = 0, includeChips: Bool = true) {
         self.rng = SeededRandom(seed: seed)
         self.interval = interval
         self.tick = startTick
+        self.includeChips = includeChips
     }
 
     /// 生成下一帧演示读数
@@ -118,10 +122,10 @@ public struct DemoGenerator {
             timeRemainingMinutes: phase.onAC ? nil : (phase.load > 20 ? 95 : 380),
             displayPowerW: safeDisplay,
             portPowerW: safePort,
-            cpuPowerW: load * 0.34,
-            gpuPowerW: load * 0.16,
-            anePowerW: 0.3,
-            dramPowerW: load * 0.07,
+            cpuPowerW: includeChips ? load * 0.34 : nil,
+            gpuPowerW: includeChips ? load * 0.16 : nil,
+            anePowerW: includeChips ? 0.3 : nil,
+            dramPowerW: includeChips ? load * 0.07 : nil,
             inputVoltageV: adapterIn > 0 ? inputVoltage : nil,
             inputCurrentA: adapterIn > 0 ? inputCurrent : nil,
             cpuTempC: cpuTemp,
@@ -142,14 +146,15 @@ public struct DemoGenerator {
     /// - Parameter endPhase: 让最后一个样本落在周期内的指定秒数（用于渲染“充电中/放电中”等固定状态）。
     public static func history(seconds: Int, seed: UInt64 = 0x5EED_1234,
                                endingAt now: Date = Date(),
-                               endPhase: Double? = nil) -> [PowerReading] {
+                               endPhase: Double? = nil,
+                               includeChips: Bool = true) -> [PowerReading] {
         let cycle = 110.0
         var lastTick = (seconds - 1) % 110
         if let endPhase {
             lastTick = Int(endPhase.truncatingRemainder(dividingBy: cycle))
         }
         let startTick = ((lastTick - (seconds - 1)) % Int(cycle) + Int(cycle)) % Int(cycle)
-        var generator = DemoGenerator(seed: seed, startTick: startTick)
+        var generator = DemoGenerator(seed: seed, startTick: startTick, includeChips: includeChips)
         var result: [PowerReading] = []
         for i in 0..<seconds {
             let time = now.addingTimeInterval(Double(i - seconds + 1))

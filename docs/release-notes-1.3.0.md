@@ -25,7 +25,9 @@ Power is read from the private **IOReport** framework, following
   `GPU` alias, ANE/DRAM per-block counters with aggregate fallbacks
 - **PMP fallback**: when macOS 27 gates the Energy Model CPU counters (they read 0), CPU watts come
   from the PMP per-cluster power histograms (`PACC*` / `EACC*` / `MACC*`, residency-weighted bins)
-- DRAM falls back to SMC `PZD*` keys; channels that exist but read 0 are shown as `0.00 W`
+- DRAM falls back to SMC `PZD*` keys
+- chip branches with no usable reading are **hidden** instead of showing “—”; if CPU/GPU/ANE are all
+  unavailable the diagram falls back to the plain system / display / ports layout
 
 ```bash
 /Applications/WattMeter.app/Contents/MacOS/WattMeter --chips   # dump the energy channels
