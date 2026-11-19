@@ -7,10 +7,13 @@ public struct MainWindowView: View {
     @ObservedObject private var l10n = Localization.shared
     /// 窗口里使用可滚动容器；离屏预览时关闭（ScrollView 无法被 ImageRenderer 渲染）
     private let scrollable: Bool
+    private let onShowAbout: () -> Void
 
-    public init(store: PowerStore, scrollable: Bool = false) {
+    public init(store: PowerStore, scrollable: Bool = false,
+                onShowAbout: @escaping () -> Void = {}) {
         self.store = store
         self.scrollable = scrollable
+        self.onShowAbout = onShowAbout
     }
 
     private var samples: [PowerReading] { store.readings(in: store.windowSeconds) }
@@ -96,6 +99,15 @@ public struct MainWindowView: View {
                         .foregroundStyle(.white.opacity(0.45))
                 }
                 Spacer()
+                Button {
+                    onShowAbout()
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+                .buttonStyle(.plain)
+                .help(L("关于 WattMeter"))
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(PowerFormat.watts(store.latest?.totalW))
                         .font(.system(size: 38, weight: .light, design: .rounded))

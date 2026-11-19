@@ -76,6 +76,8 @@ MainActor.assumeIsolated {
     let content: AnyView
     if viewName == "main" {
         content = AnyView(MainWindowView(store: store, scrollable: false).frame(width: width))
+    } else if viewName == "about" {
+        content = AnyView(AboutView())
     } else if viewName == "flow" {
         content = AnyView(
             FlowDiagram(reading: store.latest)

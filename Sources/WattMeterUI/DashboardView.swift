@@ -7,15 +7,18 @@ public struct DashboardView: View {
     @ObservedObject private var loginItem: LoginItemController
     @ObservedObject private var l10n = Localization.shared
     private let onOpenWindow: () -> Void
+    private let onShowAbout: () -> Void
     private let onQuit: () -> Void
 
     public init(store: PowerStore,
                 loginItem: LoginItemController = LoginItemController(),
                 onOpenWindow: @escaping () -> Void = {},
+                onShowAbout: @escaping () -> Void = {},
                 onQuit: @escaping () -> Void = {}) {
         self.store = store
         self.loginItem = loginItem
         self.onOpenWindow = onOpenWindow
+        self.onShowAbout = onShowAbout
         self.onQuit = onQuit
     }
 

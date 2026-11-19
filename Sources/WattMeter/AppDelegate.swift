@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var mainWindow: NSWindow?
+    private var aboutWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -111,6 +112,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loginText = loginItem.requiresApproval
             ? L("开机自动启动（等待系统批准…）")
             : L("开机自动启动")
+        let aboutItem = NSMenuItem(title: L("关于 WattMeter"), action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
+        menu.addItem(.separator())
+
         let loginMenuItem = NSMenuItem(title: loginText, action: #selector(toggleLoginItem), keyEquivalent: "")
         loginMenuItem.target = self
         loginMenuItem.state = loginItem.enabled ? .on : .off
@@ -147,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store: store,
             loginItem: loginItem,
             onOpenWindow: { [weak self] in self?.openMainWindow() },
+            onShowAbout: { [weak self] in self?.showAbout() },
             onQuit: { NSApp.terminate(nil) }
         )
         let controller = NSHostingController(rootView: root)
@@ -180,7 +188,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown { popover.performClose(nil) }
 
         if mainWindow == nil {
-            let controller = NSHostingController(rootView: MainWindowView(store: store, scrollable: true))
+            let controller = NSHostingController(rootView: MainWindowView(
+                store: store, scrollable: true,
+                onShowAbout: { [weak self] in self?.showAbout() }))
             let window = NSWindow(contentViewController: controller)
             window.title = "WattMeter"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -226,6 +236,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: L("好"))
             alert.runModal()
         }
+    }
+
+    @objc private func showAbout() {
+        if popover.isShown { popover.performClose(nil) }
+        if aboutWindow == nil {
+            let view = AboutView { [weak self] in self?.aboutWindow?.close() }
+            let controller = NSHostingController(rootView: view)
+            let window = NSWindow(contentViewController: controller)
+            window.title = L("关于 WattMeter")
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.tabbingMode = .disallowed
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.center()
+            aboutWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        aboutWindow?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func quit() {

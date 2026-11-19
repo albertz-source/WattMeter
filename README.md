@@ -163,6 +163,7 @@ The visual language is inspired by [PowerLens](https://github.com/kinghhhin-desi
 | Charts | Stacked area of adapter vs battery, plus a total/net-battery line chart in the main window |
 | Main window | 1020 × 832 pt (scrollable if the user shrinks it): flow diagram, stacked area chart, line chart, and adapter / battery / temperature cards |
 | Language | English / 简体中文, switch in the panel footer or via the right-click menu (persisted) |
+| About | An About window (ⓘ button or right-click menu) with version/build, requirements, links, credits and a “copy diagnostics” button |
 | Launch at login | Toggle in the panel footer or the right-click menu. Uses `SMAppService.mainApp`; macOS may ask for approval in System Settings → General → Login Items |
 | Menu bar | Monospaced digits, width auto-fitted, detailed tooltip, single-instance guard |
 
