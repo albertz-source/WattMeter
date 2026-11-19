@@ -59,6 +59,10 @@ typedef struct SPReading {
     char    powerSourceState[32]; // "AC Power" / "Battery Power" / "Unknown"
 
     /* ---- 芯片分项功率（W，读不到为 NaN；来自 IOReport Energy Model） ---- */
+    int32_t cpuPowerAvailable;
+    int32_t gpuPowerAvailable;
+    int32_t anePowerAvailable;
+    int32_t dramPowerAvailable;
     double  cpuPowerW;
     double  gpuPowerW;
     double  anePowerW;

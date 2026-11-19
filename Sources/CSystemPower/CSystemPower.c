@@ -76,9 +76,14 @@ typedef struct {
     CFDictionaryRef (*createSamplesDelta)(CFDictionaryRef, CFDictionaryRef, CFTypeRef);
     CFStringRef (*channelName)(CFDictionaryRef);
     CFStringRef (*channelGroup)(CFDictionaryRef);
+    CFStringRef (*channelSubGroup)(CFDictionaryRef);
     CFStringRef (*channelUnit)(CFDictionaryRef);
     int64_t (*simpleValue)(CFDictionaryRef, int);
+    int (*stateCount)(CFDictionaryRef);
+    CFStringRef (*stateName)(CFDictionaryRef, int);
+    int64_t (*stateResidency)(CFDictionaryRef, int);
     void (*mergeChannels)(CFDictionaryRef, CFDictionaryRef, CFTypeRef);
+    int cpuFromPMP;   /* macOS 27 门控 Energy Model CPU 后固定使用 PMP */
     CFMutableDictionaryRef subscription;
     CFMutableDictionaryRef subscribed;
     CFDictionaryRef previous;
@@ -608,6 +613,10 @@ static void ioreport_init(SPReader *reader) {
     io->simpleValue = (int64_t (*)(CFDictionaryRef, int))dlsym(io->handle, "IOReportSimpleGetIntegerValue");
     io->channelGroup = (CFStringRef (*)(CFDictionaryRef))dlsym(io->handle, "IOReportChannelGetGroup");
     io->channelUnit = (CFStringRef (*)(CFDictionaryRef))dlsym(io->handle, "IOReportChannelGetUnitLabel");
+    io->channelSubGroup = (CFStringRef (*)(CFDictionaryRef))dlsym(io->handle, "IOReportChannelGetSubGroup");
+    io->stateCount = (int (*)(CFDictionaryRef))dlsym(io->handle, "IOReportStateGetCount");
+    io->stateName = (CFStringRef (*)(CFDictionaryRef, int))dlsym(io->handle, "IOReportStateGetNameForIndex");
+    io->stateResidency = (int64_t (*)(CFDictionaryRef, int))dlsym(io->handle, "IOReportStateGetResidency");
     io->mergeChannels = (void (*)(CFDictionaryRef, CFDictionaryRef, CFTypeRef))
         dlsym(io->handle, "IOReportMergeChannels");
 
@@ -619,8 +628,9 @@ static void ioreport_init(SPReader *reader) {
     /* 合并多个分组（mactop 的做法）：Energy Model 是主源，
        GPU Stats / CPU Stats / AMC Stats 提供不同系统的补充通道。 */
     CFMutableDictionaryRef merged = NULL;
-    const char *groups[] = {"Energy Model", "Energy Counters", "GPU Stats", "CPU Stats", "AMC Stats"};
-    for (int i = 0; i < 5; i++) {
+    const char *groups[] = {"Energy Model", "Energy Counters", "GPU Stats", "CPU Stats", "AMC Stats",
+                             "PMP", "PMP0", "PMP1", "PMP2", "PMP3"};
+    for (int i = 0; i < 10; i++) {
         CFStringRef group = CFStringCreateWithCString(NULL, groups[i], kCFStringEncodingUTF8);
         CFMutableDictionaryRef ch = io->copyChannels(group, NULL, 0, 0, 0);
         CFRelease(group);
@@ -683,6 +693,51 @@ static double energy_to_watts(int64_t energy, CFStringRef unitRef, double durati
     return rate;
 }
 
+/* PMP 分组名：PMP、PMP0、PMP1 …（M5/M6 用 per-die 分组） */
+static int is_pmp_group(const char *grp) {
+    if (strncmp(grp, "PMP", 3) != 0) return 0;
+    for (const char *p = grp + 3; *p; p++) {
+        if (*p < '0' || *p > '9') return 0;
+    }
+    return 1;
+}
+
+/* PMP "Energy" 子组里的 CPU 簇功率直方图：PACC / PACC0 / MACC1 / EACC0 SRAM */
+static int is_pmp_cpu_power_channel(const char *sub, const char *chn) {
+    if (strcmp(sub, "Energy") != 0) return 0;
+    size_t len = strlen(chn);
+    if (len < 4) return 0;
+    if (strncmp(chn + 1, "ACC", 3) != 0) return 0;
+    const char *p = chn + 4;
+    while (*p >= '0' && *p <= '9') p++;
+    if (*p == '\0') return 1;
+    return strcmp(p, " SRAM") == 0;
+}
+
+/* 直方图按 residency 加权平均；skipLowest 时第一档按 0 计（空闲簇常驻低档） */
+static double state_bin_average(SPIOReport *io, CFDictionaryRef item, int skipLowest) {
+    if (!io->stateCount || !io->stateResidency || !io->stateName) return 0;
+    int n = io->stateCount(item);
+    if (n <= 0 || n > 64) return 0;
+    double bins[64];
+    int64_t residency[64];
+    for (int i = 0; i < n; i++) {
+        char buf[32] = {0};
+        CFStringRef name = io->stateName(item, i);
+        if (name) CFStringGetCString(name, buf, sizeof buf, kCFStringEncodingUTF8);
+        bins[i] = atof(buf);              /* "2W" -> 2, "0.250W" -> 0.25 */
+        residency[i] = io->stateResidency(item, i);
+    }
+    int64_t total = 0;
+    double weighted = 0;
+    for (int i = 0; i < n; i++) {
+        total += residency[i];
+        if (skipLowest && i == 0) continue;
+        weighted += bins[i] * (double)residency[i];
+    }
+    return total > 0 ? weighted / (double)total : 0;
+}
+
 static int name_contains(const char *haystack, const char *needle) {
     return strstr(haystack, needle) != NULL;
 }
@@ -722,17 +777,20 @@ static void ioreport_read(SPReader *reader, SPReading *out) {
             double gpuNamed = 0, gpuAlias = 0;
             double aneBlock = 0, aneNamed = 0;
             double dramBlock = 0, dramNamed = 0;
+            /* PMP CPU 直方图：同一 group/channel 只取一次，避免合并订阅重复计数 */
+            struct { char grp[16]; char chn[64]; double value; } pmpCpu[32];
+            int pmpCpuCount = 0;
 
             for (CFIndex i = 0; i < count; i++) {
                 CFDictionaryRef channel = (CFDictionaryRef)CFArrayGetValueAtIndex(array, i);
                 if (!channel) continue;
+                char grp[64] = {0};
                 if (io->channelGroup) {
                     CFStringRef group = io->channelGroup(channel);
-                    char grp[64] = {0};
                     if (group) CFStringGetCString(group, grp, sizeof grp, kCFStringEncodingUTF8);
-                    if (strcmp(grp, "Energy Model") != 0 && strcmp(grp, "Energy Counters") != 0) {
-                        continue;
-                    }
+                    int isEnergyGroup = strcmp(grp, "Energy Model") == 0 ||
+                                        strcmp(grp, "Energy Counters") == 0;
+                    if (!isEnergyGroup && !is_pmp_group(grp)) continue;
                 }
                 CFStringRef name = io->channelName(channel);
                 if (!name) continue;
@@ -741,35 +799,74 @@ static void ioreport_read(SPReader *reader, SPReading *out) {
 
                 CFStringRef unit = io->channelUnit ? io->channelUnit(channel) : NULL;
                 double watts = energy_to_watts(io->simpleValue(channel, 0), unit, dt);
-                if (isnan(watts) || watts < 0.001) continue;
+                if (isnan(watts)) continue;
 
                 /* CPU：先分簇（ECPU/PCPU/MCPU…），再总 CPU Energy，二者不叠加 */
                 if (name_contains(chn, "ECPU Energy") || name_contains(chn, "PCPU Energy") ||
                     name_contains(chn, "MCPU Energy") || name_contains(chn, "eCPUs Energy") ||
                     name_contains(chn, "pCPUs Energy") || name_contains(chn, "mCPUs Energy")) {
                     cpuTyped += watts;
+                    out->cpuPowerAvailable = 1;
                 } else if (name_contains(chn, "CPU Energy")) {
                     cpuTotal += watts;
+                    out->cpuPowerAvailable = 1;
                 } else if (strcmp(chn, "GPU Energy") == 0) {
                     gpuNamed += watts;
+                    out->gpuPowerAvailable = 1;
                 } else if (strcmp(chn, "GPU") == 0) {
                     gpuAlias += watts;
+                    out->gpuPowerAvailable = 1;
                 } else if (name_contains(chn, "ANE") || name_contains(chn, "NPU") ||
                            name_contains(chn, "Neural") || name_contains(chn, "ane")) {
                     if (name_contains(chn, "Energy")) aneNamed += watts; else aneBlock += watts;
+                    out->anePowerAvailable = 1;
                 } else if (strncmp(chn, "DRAM", 4) == 0) {
                     if (name_contains(chn, "Energy")) dramNamed += watts; else dramBlock += watts;
+                    out->dramPowerAvailable = 1;
+                } else if (is_pmp_group(grp)) {
+                    char sub[64] = {0};
+                    if (io->channelSubGroup) {
+                        CFStringRef sg = io->channelSubGroup(channel);
+                        if (sg) CFStringGetCString(sg, sub, sizeof sub, kCFStringEncodingUTF8);
+                    }
+                    if (is_pmp_cpu_power_channel(sub, chn) &&
+                        io->stateCount && io->stateCount(channel) > 1) {
+                        double w = state_bin_average(io, channel, 1);
+                        out->cpuPowerAvailable = 1;
+                        if (w > 0.001 && pmpCpuCount < 32) {
+                            int seen = 0;
+                            for (int k = 0; k < pmpCpuCount; k++) {
+                                if (strcmp(pmpCpu[k].grp, grp) == 0 &&
+                                    strcmp(pmpCpu[k].chn, chn) == 0) {
+                                    if (w > pmpCpu[k].value) pmpCpu[k].value = w;
+                                    seen = 1;
+                                    break;
+                                }
+                            }
+                            if (!seen) {
+                                snprintf(pmpCpu[pmpCpuCount].grp, sizeof pmpCpu[pmpCpuCount].grp, "%s", grp);
+                                snprintf(pmpCpu[pmpCpuCount].chn, sizeof pmpCpu[pmpCpuCount].chn, "%s", chn);
+                                pmpCpu[pmpCpuCount].value = w;
+                                pmpCpuCount++;
+                            }
+                        }
+                    }
                 }
             }
 
+            double pmpCpuW = 0;
+            for (int k = 0; k < pmpCpuCount; k++) pmpCpuW += pmpCpu[k].value;
+
             double cpu = cpuTotal > 0 ? cpuTotal : cpuTyped;
+            if (cpu <= 0.001 && pmpCpuW > 0.001) io->cpuFromPMP = 1;
+            if (io->cpuFromPMP && pmpCpuW > 0.001) cpu = pmpCpuW;
             double gpu = gpuNamed > 0 ? gpuNamed : gpuAlias;
             double ane = aneBlock > 0 ? aneBlock : aneNamed;
             double dram = dramBlock > 0 ? dramBlock : dramNamed;
 
-            if (cpu > 0.001) out->cpuPowerW = cpu;
-            if (gpu > 0.001) out->gpuPowerW = gpu;
-            if (ane > 0.001) out->anePowerW = ane;
+            out->cpuPowerW = cpu;
+            out->gpuPowerW = gpu;
+            out->anePowerW = ane;
             if (dram > 0.001) {
                 out->dramPowerW = dram;
             } else {

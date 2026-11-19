@@ -16,10 +16,16 @@ adapter ─┐                 ┌─ CPU 4.2 W
 battery ─┘                 └─ ANE 0.3 W
 ```
 
-Power is read from the private **IOReport** framework (`Energy Model`, merged with `GPU Stats` /
-`CPU Stats` / `AMC Stats`): energy deltas are converted to watts using each channel's unit label,
-CPU totals prefer whole-CPU channels over per-cluster ones, and DRAM falls back to SMC `PZD*` keys.
-Many thanks to [mactop](https://github.com/metaspartan/mactop) for documenting this approach.
+Power is read from the private **IOReport** framework, following
+[mactop](https://github.com/metaspartan/mactop):
+
+- merge `Energy Model` + `Energy Counters` + `GPU Stats` + `CPU Stats` + `AMC Stats`
+- convert each channel's energy delta to watts using its unit label (`mJ` / `uJ` / `nJ`)
+- classify channels: whole-CPU totals preferred over per-cluster energy, GPU `GPU Energy` with a
+  `GPU` alias, ANE/DRAM per-block counters with aggregate fallbacks
+- **PMP fallback**: when macOS 27 gates the Energy Model CPU counters (they read 0), CPU watts come
+  from the PMP per-cluster power histograms (`PACC*` / `EACC*` / `MACC*`, residency-weighted bins)
+- DRAM falls back to SMC `PZD*` keys; channels that exist but read 0 are shown as `0.00 W`
 
 ```bash
 /Applications/WattMeter.app/Contents/MacOS/WattMeter --chips   # dump the energy channels
@@ -27,8 +33,9 @@ Many thanks to [mactop](https://github.com/metaspartan/mactop) for documenting t
 
 ### Notes
 
-- macOS 27 gates the Energy Model CPU/DRAM counters (they stay at 0 unless an entitled sampler
-  runs), so those rows may show “—”; GPU counters keep working. macOS 26 and older report all four.
+- On macOS 27 the Energy Model CPU/DRAM counters are gated (they stay at 0 unless an entitled
+  sampler runs). CPU is then taken from the PMP histograms (M5/M6 class chips); DRAM falls back to
+  SMC. macOS 26 and older report all four directly.
 - Everything from 1.2.2 is included: macOS 13+ universal build, always-visible battery port,
   fan-key discovery, battery-machine fixes and diagnostics.
 

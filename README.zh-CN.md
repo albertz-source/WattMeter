@@ -58,7 +58,7 @@
 | 电池状态 / 电量 / 剩余时间 | IOKit `IOPowerSources` | 事件驱动 | |
 | 适配器额定功率与名称 | `AdapterDetails` | 插拔时 | |
 | 兜底遥测 | `PowerTelemetryData` | **约 20 秒** | `SystemLoad` / `SystemPowerIn`、适配器损耗 |
-| 芯片分项功率（CPU / GPU / ANE / DRAM） | IOReport `Energy Model`（合并 `GPU Stats` / `CPU Stats` / `AMC Stats`） | 约 1 秒 | 通过 `dlopen` 读取私有 IOReport；按通道单位标签换算。macOS 27 会门控 Energy Model 的 CPU/DRAM 计数器，可能显示「—」；DRAM 可回退 SMC `PZD*` |
+| 芯片分项功率（CPU / GPU / ANE / DRAM） | IOReport `Energy Model`（合并 `GPU Stats` / `CPU Stats` / `AMC Stats`） | 约 1 秒 | 通过 `dlopen` 读取私有 IOReport；按通道单位标签换算。macOS 27 门控 Energy Model 的 CPU 计数器时，改用 PMP 分簇直方图；DRAM 可回退 SMC `PZD*` |
 | 风扇 | AppleSMC `F?Ac` / `F?Mn` / `F?Mx` / `F?Tg` | 亚秒级 | 启动时枚举发现，键名与类型随机型不同（`flt` / `fpe2` / `ui16`）；多风扇取最大转速。M3/M4 MacBook 空闲时热管理会完全停转，显示「0 RPM · 已停转」属正常 |
 | 屏幕背光 | AppleSMC `PDBR` / `PBwo` / `PBLR` | 亚秒级 | 仅带内置屏的机型 |
 | USB-C 对外供电 | AppleSMC `D1..D4 JV×JI`，否则 `PowerOutDetails` | 亚秒级 | 排除充电输入通道 |
