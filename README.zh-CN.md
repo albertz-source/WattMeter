@@ -206,7 +206,7 @@ dist/WattMeter.app/Contents/MacOS/WattMeter --login-item status   # 查看开机
 dist/WattMeter.app/Contents/MacOS/WattMeter --login-item enable   # 开启（disable 关闭）
 ```
 
-`scripts/package-dmg.sh` 生成的 DMG 内含 `WattMeter.app`、`Applications` 快捷方式和安装说明：打开后把 App 拖进 Applications 即可。
+`scripts/package-dmg.sh` 生成的 DMG 内含 `WattMeter.app`、`Applications` 快捷方式和英文安装说明（`INSTALL.txt`，附简体中文段落）：打开后把 App 拖进 Applications 即可。
 
 > 为什么不用 SwiftPM：`swift build` 需要可写的用户级缓存和 manifest 编译的沙盒权限，在受限环境会失败。`scripts/build.sh` 直接调用 `clang`/`swiftc`，所有缓存放在项目内。在装有 Xcode 的普通机器上 `swift build` 同样可用。
 

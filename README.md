@@ -212,7 +212,7 @@ dist/WattMeter.app/Contents/MacOS/WattMeter --login-item status   # launch-at-lo
 dist/WattMeter.app/Contents/MacOS/WattMeter --login-item enable   # register (disable to undo)
 ```
 
-The DMG (created by `scripts/package-dmg.sh`) contains `WattMeter.app`, an `Applications` shortcut and a short install note: open it, drag the app to Applications, eject.
+The DMG (created by `scripts/package-dmg.sh`) contains `WattMeter.app`, an `Applications` shortcut and an English install note (`INSTALL.txt`) with a short 简体中文 section: open it, drag the app to Applications, eject.
 
 > Why not SwiftPM: `swift build` needs writable user-level caches and sandbox permission for manifest compilation, which fails in restricted environments. `scripts/build.sh` calls `clang`/`swiftc` directly and keeps all caches inside the project. On a normal machine with Xcode, `swift build` works too.
 
