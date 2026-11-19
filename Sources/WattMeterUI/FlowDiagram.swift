@@ -40,6 +40,9 @@ public struct FlowDiagram: View {
 
     /// 系统分项 = 总功率 − 屏幕 − 接口
     private var system: Double { reading?.systemComponentW ?? 0 }
+    private var cpuPower: Double? { reading?.cpuPowerW }
+    private var gpuPower: Double? { reading?.gpuPowerW }
+    private var anePower: Double? { reading?.anePowerW }
 
     private var adapterToLoadW: Double { reading?.adapterToLoadW ?? 0 }
     private var batteryToLoadW: Double { reading?.batteryToLoadW ?? 0 }
@@ -71,6 +74,10 @@ public struct FlowDiagram: View {
     private let centerNodeX: CGFloat = 159
     private let centerNodeWidth: CGFloat = 40
     private let rightNodeX: CGFloat = 324
+    private let systemNodeX: CGFloat = 236
+    private let systemNodeW: CGFloat = 34
+    private let chipNodeX: CGFloat = 306
+    private let chipNodeW: CGFloat = 34
 
     // 左侧两个端口（电源在上、电池在下）的中心 y
     private let adapterY: CGFloat = 52
@@ -146,6 +153,29 @@ public struct FlowDiagram: View {
             )
             .frame(width: 40, height: height)
             .position(x: x + 20, y: y)
+    }
+
+    /// 小方块节点：内部显示「标题 + 数值」
+    private func chipNode(_ title: String, _ value: String, tint: Color,
+                          center: CGPoint, size: CGSize, muted: Bool = false) -> some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(LinearGradient(colors: [tint.opacity(muted ? 0.10 : 0.24), .white.opacity(0.03)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(tint.opacity(muted ? 0.12 : 0.28), lineWidth: 0.7))
+            .overlay(
+                VStack(spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 7.5, weight: .medium))
+                        .foregroundStyle(tint.opacity(muted ? 0.55 : 0.9))
+                    Text(value)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(muted ? 0.45 : 0.92))
+                }
+            )
+            .frame(width: size.width, height: size.height)
+            .position(center)
     }
 
     private func label(_ value: String, _ name: String, _ tint: Color,
@@ -227,15 +257,24 @@ public struct FlowDiagram: View {
                      watts: max(total, adapterToLoadW), tint: Palette.mint)
             }
 
-            // 右侧：系统 / 屏幕 / 接口（始终三支）
+            // 右侧：系统（再分 CPU / GPU / ANE） + 屏幕 / 接口
             link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 62),
-                 to: CGPoint(x: rightNodeX, y: 34),
+                 to: CGPoint(x: systemNodeX, y: 62),
                  watts: system, tint: systemTint)
-            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 104),
-                 to: CGPoint(x: rightNodeX, y: 106),
+            link(from: CGPoint(x: systemNodeX + systemNodeW, y: 62),
+                 to: CGPoint(x: chipNodeX, y: 28),
+                 watts: cpuPower, tint: systemTint, muted: cpuPower == nil)
+            link(from: CGPoint(x: systemNodeX + systemNodeW, y: 62),
+                 to: CGPoint(x: chipNodeX, y: 62),
+                 watts: gpuPower, tint: systemTint, muted: gpuPower == nil)
+            link(from: CGPoint(x: systemNodeX + systemNodeW, y: 62),
+                 to: CGPoint(x: chipNodeX, y: 96),
+                 watts: anePower, tint: systemTint, muted: anePower == nil)
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 116),
+                 to: CGPoint(x: systemNodeX, y: 116),
                  watts: display, tint: displayTint, muted: display == nil)
-            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 138),
-                 to: CGPoint(x: rightNodeX, y: 160),
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 150),
+                 to: CGPoint(x: systemNodeX, y: 150),
                  watts: ports, tint: portTint, muted: ports == nil)
         }
         .frame(width: 364, height: 180)
@@ -311,13 +350,28 @@ public struct FlowDiagram: View {
 
     @ViewBuilder
     private var rightBranches: some View {
-        node("cpu", systemTint, rightNodeX, 34, 50)
-        label(wattsText(system), L("系统"), systemTint, 261, 34)
+        // 系统（CPU + GPU + ANE + 其他）
+        chipNode(L("系统"), PowerFormat.watts(system), tint: systemTint,
+                 center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 62),
+                 size: CGSize(width: systemNodeW, height: 36))
 
-        node("display", displayTint, rightNodeX, 106, 34, muted: display == nil)
-        label(wattsText(display), L("屏幕"), displayTint, 261, 106, muted: display == nil)
+        // 芯片分项
+        chipNode("CPU", PowerFormat.watts(cpuPower), tint: systemTint,
+                 center: CGPoint(x: chipNodeX + chipNodeW / 2, y: 28),
+                 size: CGSize(width: chipNodeW, height: 20), muted: cpuPower == nil)
+        chipNode("GPU", PowerFormat.watts(gpuPower), tint: systemTint,
+                 center: CGPoint(x: chipNodeX + chipNodeW / 2, y: 62),
+                 size: CGSize(width: chipNodeW, height: 20), muted: gpuPower == nil)
+        chipNode("ANE", PowerFormat.watts(anePower), tint: systemTint,
+                 center: CGPoint(x: chipNodeX + chipNodeW / 2, y: 96),
+                 size: CGSize(width: chipNodeW, height: 20), muted: anePower == nil)
 
-        node("cable.connector", portTint, rightNodeX, 160, 34, muted: ports == nil)
-        label(wattsText(ports), L("接口"), portTint, 261, 160, muted: ports == nil)
+        // 屏幕 / 接口
+        chipNode(L("屏幕"), PowerFormat.watts(display), tint: displayTint,
+                 center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 116),
+                 size: CGSize(width: systemNodeW, height: 22), muted: display == nil)
+        chipNode(L("接口"), PowerFormat.watts(ports), tint: portTint,
+                 center: CGPoint(x: systemNodeX + systemNodeW / 2, y: 150),
+                 size: CGSize(width: systemNodeW, height: 22), muted: ports == nil)
     }
 }

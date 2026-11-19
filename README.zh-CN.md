@@ -58,6 +58,7 @@
 | 电池状态 / 电量 / 剩余时间 | IOKit `IOPowerSources` | 事件驱动 | |
 | 适配器额定功率与名称 | `AdapterDetails` | 插拔时 | |
 | 兜底遥测 | `PowerTelemetryData` | **约 20 秒** | `SystemLoad` / `SystemPowerIn`、适配器损耗 |
+| 芯片分项功率（CPU / GPU / ANE / DRAM） | IOReport `Energy Model`（合并 `GPU Stats` / `CPU Stats` / `AMC Stats`） | 约 1 秒 | 通过 `dlopen` 读取私有 IOReport；按通道单位标签换算。macOS 27 会门控 Energy Model 的 CPU/DRAM 计数器，可能显示「—」；DRAM 可回退 SMC `PZD*` |
 | 风扇 | AppleSMC `F?Ac` / `F?Mn` / `F?Mx` / `F?Tg` | 亚秒级 | 启动时枚举发现，键名与类型随机型不同（`flt` / `fpe2` / `ui16`）；多风扇取最大转速。M3/M4 MacBook 空闲时热管理会完全停转，显示「0 RPM · 已停转」属正常 |
 | 屏幕背光 | AppleSMC `PDBR` / `PBwo` / `PBLR` | 亚秒级 | 仅带内置屏的机型 |
 | USB-C 对外供电 | AppleSMC `D1..D4 JV×JI`，否则 `PowerOutDetails` | 亚秒级 | 排除充电输入通道 |
@@ -155,7 +156,7 @@ wattmeter/
 | 面板 | 400 × 680 pt 深色毛玻璃（`NSVisualEffectView`，`.popover` 材质、behind-window、darkAqua） |
 | 强调色 | mint `#6EE0C2`（电源）、amber `#F5C273`（电池）、blue `#7DB0FA`（系统）、purple `#BA9CF5`（适配器/接口） |
 | 字体 | SF Rounded；主读数 31 pt light，行内读数 19 pt medium，说明文字 9–10 pt |
-| 流向图 | 364 × 180：左侧电源端口在上、电池端口在下（**只要装了电池就始终显示**），中间整机，右侧负载（系统 / 屏幕 / 接口）。圆角贝塞尔流线，渐变 + 辉光 + 指示能量方向的光点；充电时光点**从右往左**流入电池，放电/混合供电时从左往右；线宽固定 14 pt，读数跳动时不会抖动 |
+| 流向图 | 364 × 180：左侧电源端口在上、电池端口在下（**只要装了电池就始终显示**），中间整机，右侧负载（系统，再细分 CPU / GPU / ANE，以及屏幕 / 接口）。圆角贝塞尔流线，渐变 + 辉光 + 指示能量方向的光点；充电时光点**从右往左**流入电池，放电/混合供电时从左往右；线宽固定 14 pt，读数跳动时不会抖动 |
 | 温度 | 面板内 CPU / GPU / SSD / 电池 温度胶囊；主窗口有完整温度卡。高于 65 °C 转琥珀色，高于 80 °C 转红色 |
 | 图表 | 电源与电池的堆叠面积图；主窗口另有整机功率 / 电池净功率折线图 |
 | 主窗口 | 1020 × 832 pt（手动缩小时可滚动）：流向图、堆叠面积图、折线图，以及适配器 / 电池 / 温度卡 |
@@ -243,6 +244,7 @@ git push origin v<版本>
 ./.build/bin/wattprobe --split-test  # 电源/电池/充电分流规则自检
 .build/bin/wattprobe --battery     # 电池机型完整诊断
 ./.build/bin/wattprobe --fans        # 列出所有风扇 SMC 键及其解码值
+./.build/bin/wattprobe --chips       # 导出 IOReport 能耗通道（CPU/GPU/ANE/DRAM）
 
 # 安装后的 App 本体也能跑同样的诊断（不需要开发工具）
 /Applications/WattMeter.app/Contents/MacOS/WattMeter --fans
@@ -278,7 +280,8 @@ git push origin v<版本>
 3. Intel Mac 上 `PSTR`/`PDTR` 一般存在；缺失时会退回 IOPS 电压电流 + 遥测。
 4. 暂不支持历史持久化、CSV 导出、通知、登录项。
 5. 构建产物为 ad-hoc 签名，未公证。
-6. 未实现 IOReport 的子系统功率（CPU / GPU / ANE / DRAM）。
+6. 子系统功率来自私有 IOReport：macOS 27 会门控 Energy Model 的 CPU/DRAM 计数器（读数恒为 0），
+   因此这些值可能显示「—」；macOS 26 及更早版本正常，GPU 计数器不受影响。
 7. 温度键随机型不同。应用会在启动时枚举 SMC 自动发现 `Tp*` / `Tg*` / `TH0*`，但部分 Mac 本身就没有 GPU 或电池传感器（台式机没有电池），这些行显示「—」。
 
 ---

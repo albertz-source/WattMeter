@@ -66,6 +66,12 @@ public struct PowerReading: Identifiable, Sendable {
     public let batteryVoltageV: Double?
     public let batteryCurrentA: Double?
 
+    /// 芯片分项功率（W，来自 IOReport Energy Model；读不到为 nil）
+    public let cpuPowerW: Double?
+    public let gpuPowerW: Double?
+    public let anePowerW: Double?
+    public let dramPowerW: Double?
+
     /// 组件温度（℃，读不到为 nil）
     public let cpuTempC: Double?
     public let gpuTempC: Double?
@@ -181,6 +187,10 @@ public struct PowerReading: Identifiable, Sendable {
         timeRemainingMinutes: Double?,
         displayPowerW: Double? = nil,
         portPowerW: Double? = nil,
+        cpuPowerW: Double? = nil,
+        gpuPowerW: Double? = nil,
+        anePowerW: Double? = nil,
+        dramPowerW: Double? = nil,
         inputVoltageV: Double? = nil,
         inputCurrentA: Double? = nil,
         batteryVoltageV: Double? = nil,
@@ -216,6 +226,10 @@ public struct PowerReading: Identifiable, Sendable {
         self.timeRemainingMinutes = timeRemainingMinutes
         self.displayPowerW = displayPowerW
         self.portPowerW = portPowerW
+        self.cpuPowerW = cpuPowerW
+        self.gpuPowerW = gpuPowerW
+        self.anePowerW = anePowerW
+        self.dramPowerW = dramPowerW
         self.inputVoltageV = inputVoltageV
         self.inputCurrentA = inputCurrentA
         self.batteryVoltageV = batteryVoltageV

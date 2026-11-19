@@ -30,10 +30,29 @@ public enum Diagnostics {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - 芯片分项
+
+    public static func chips() -> String {
+        let reader = PowerReader()
+        _ = reader.read()                     // 预热：IOReport 需要两次采样才有增量
+        usleep(600_000)
+        var lines: [String] = ["== IOReport 能耗通道（0.5 秒窗口） =="]
+        let dump = reader.dumpEnergyChannels()
+        lines.append(dump.isEmpty ? "没有可用的能耗通道" : dump.trimmingCharacters(in: .newlines))
+        if let r = reader.read() {
+            func f(_ v: Double?) -> String { v.map { String(format: "%.2f W", $0) } ?? "—" }
+            lines.append("解析结果: CPU \(f(r.cpuPowerW))  GPU \(f(r.gpuPowerW))  "
+                         + "ANE \(f(r.anePowerW))  DRAM \(f(r.dramPowerW))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - 电池
 
     public static func battery() -> String {
         let reader = PowerReader()
+        _ = reader.read()                     // 预热 IOReport
+        usleep(600_000)
         guard let r = reader.read() else { return "读取失败：没有可用数据" }
 
         func f(_ v: Double?, _ digits: Int = 2) -> String {
@@ -66,6 +85,8 @@ public enum Diagnostics {
         lines.append("分项: 系统 \(f(r.systemComponentW)) W   屏幕 \(f(r.displayPowerW)) W   接口 \(f(r.portPowerW)) W")
         lines.append("温度: CPU \(f(r.cpuTempC, 1))  GPU \(f(r.gpuTempC, 1))  SSD \(f(r.ssdTempC, 1))  "
                      + "电池 \(f(r.batteryTempC, 1))  平台 \(f(r.platformTempC, 1))")
+        lines.append("芯片: CPU \(f(r.cpuPowerW)) W   GPU \(f(r.gpuPowerW)) W   "
+                     + "ANE \(f(r.anePowerW)) W   DRAM \(f(r.dramPowerW)) W")
         lines.append("风扇: \(r.fanText) RPM（\(r.fanCount ?? 0) 个）")
 
         let state: String

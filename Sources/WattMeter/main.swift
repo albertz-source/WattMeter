@@ -3,6 +3,10 @@ import WattMeterCore
 import WattMeterUI
 
 // 命令行诊断（DMG 里的 App 也能直接跑，不需要开发工具）
+if CommandLine.arguments.contains("--chips") {
+    print(Diagnostics.chips())
+    exit(0)
+}
 if CommandLine.arguments.contains("--fans") {
     print(Diagnostics.fans())
     exit(0)

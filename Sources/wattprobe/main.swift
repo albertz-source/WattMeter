@@ -14,6 +14,7 @@ var listKeys = false
 var splitTest = false
 var batteryReport = false
 var fanReport = false
+var chipReport = false
 
 var positional: [String] = []
 var index = 1
@@ -30,6 +31,8 @@ while index < CommandLine.arguments.count {
         batteryReport = true
     case "--fans":
         fanReport = true
+    case "--chips":
+        chipReport = true
     case "--interval", "-i":
         index += 1
         if index < CommandLine.arguments.count, let v = Double(CommandLine.arguments[index]) {
@@ -91,6 +94,11 @@ if splitTest {
     check("plugged in, no input yet", PowerReader.split(input: nil, load: 20, hasBattery: true, onAC: true), (20, 0, 0))
     print(failed == 0 ? "全部通过" : "有 \(failed) 项失败")
     exit(failed == 0 ? 0 : 1)
+}
+
+if chipReport {
+    print(Diagnostics.chips())
+    exit(0)
 }
 
 if fanReport {

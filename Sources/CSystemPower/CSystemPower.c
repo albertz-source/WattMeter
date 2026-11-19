@@ -15,6 +15,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <dlfcn.h>
 
 /* ------------------------------------------------------------------ */
 /* AppleSMC                                                            */
@@ -65,6 +66,26 @@ typedef struct {
 #define SP_MAX_GPU_KEYS 32
 #define SP_MAX_SSD_KEYS 24
 
+/* ---- IOReport（私有框架）动态加载：用于 CPU / GPU / ANE / DRAM 分项功率 ---- */
+typedef struct {
+    void *handle;
+    CFMutableDictionaryRef (*copyChannels)(CFStringRef, CFStringRef, uint64_t, uint64_t, uint64_t);
+    CFMutableDictionaryRef (*createSubscription)(void *, CFMutableDictionaryRef,
+                                                 CFMutableDictionaryRef *, uint64_t, CFTypeRef);
+    CFDictionaryRef (*createSamples)(CFMutableDictionaryRef, CFMutableDictionaryRef, CFTypeRef);
+    CFDictionaryRef (*createSamplesDelta)(CFDictionaryRef, CFDictionaryRef, CFTypeRef);
+    CFStringRef (*channelName)(CFDictionaryRef);
+    CFStringRef (*channelGroup)(CFDictionaryRef);
+    CFStringRef (*channelUnit)(CFDictionaryRef);
+    int64_t (*simpleValue)(CFDictionaryRef, int);
+    void (*mergeChannels)(CFDictionaryRef, CFDictionaryRef, CFTypeRef);
+    CFMutableDictionaryRef subscription;
+    CFMutableDictionaryRef subscribed;
+    CFDictionaryRef previous;
+    double previousTime;
+    int ready;
+} SPIOReport;
+
 struct SPReader {
     io_service_t  smcService;
     io_connect_t  smcConnection;
@@ -87,6 +108,7 @@ struct SPReader {
     int  fanMinCount;
     char fanMaxKeys[4][5];     /* F?Mx */
     int  fanMaxCount;
+    SPIOReport io;
 };
 
 static kern_return_t smc_call(io_connect_t conn, SMCKeyData *in, SMCKeyData *out) {
@@ -567,6 +589,203 @@ static void read_iops(SPReading *r) {
 /* 对外 API                                                            */
 /* ------------------------------------------------------------------ */
 
+static void ioreport_init(SPReader *reader) {
+    SPIOReport *io = &reader->io;
+    memset(io, 0, sizeof *io);
+    io->handle = dlopen("/usr/lib/libIOReport.dylib", RTLD_NOW);
+    if (!io->handle) return;
+
+    io->copyChannels = (CFMutableDictionaryRef (*)(CFStringRef, CFStringRef, uint64_t, uint64_t, uint64_t))
+        dlsym(io->handle, "IOReportCopyChannelsInGroup");
+    io->createSubscription = (CFMutableDictionaryRef (*)(void *, CFMutableDictionaryRef,
+                                                         CFMutableDictionaryRef *, uint64_t, CFTypeRef))
+        dlsym(io->handle, "IOReportCreateSubscription");
+    io->createSamples = (CFDictionaryRef (*)(CFMutableDictionaryRef, CFMutableDictionaryRef, CFTypeRef))
+        dlsym(io->handle, "IOReportCreateSamples");
+    io->createSamplesDelta = (CFDictionaryRef (*)(CFDictionaryRef, CFDictionaryRef, CFTypeRef))
+        dlsym(io->handle, "IOReportCreateSamplesDelta");
+    io->channelName = (CFStringRef (*)(CFDictionaryRef))dlsym(io->handle, "IOReportChannelGetChannelName");
+    io->simpleValue = (int64_t (*)(CFDictionaryRef, int))dlsym(io->handle, "IOReportSimpleGetIntegerValue");
+    io->channelGroup = (CFStringRef (*)(CFDictionaryRef))dlsym(io->handle, "IOReportChannelGetGroup");
+    io->channelUnit = (CFStringRef (*)(CFDictionaryRef))dlsym(io->handle, "IOReportChannelGetUnitLabel");
+    io->mergeChannels = (void (*)(CFDictionaryRef, CFDictionaryRef, CFTypeRef))
+        dlsym(io->handle, "IOReportMergeChannels");
+
+    if (!io->copyChannels || !io->createSubscription || !io->createSamples ||
+        !io->createSamplesDelta || !io->channelName || !io->simpleValue) {
+        return;
+    }
+
+    /* 合并多个分组（mactop 的做法）：Energy Model 是主源，
+       GPU Stats / CPU Stats / AMC Stats 提供不同系统的补充通道。 */
+    CFMutableDictionaryRef merged = NULL;
+    const char *groups[] = {"Energy Model", "Energy Counters", "GPU Stats", "CPU Stats", "AMC Stats"};
+    for (int i = 0; i < 5; i++) {
+        CFStringRef group = CFStringCreateWithCString(NULL, groups[i], kCFStringEncodingUTF8);
+        CFMutableDictionaryRef ch = io->copyChannels(group, NULL, 0, 0, 0);
+        CFRelease(group);
+        if (!ch) continue;
+        if (!merged) {
+            merged = ch;
+        } else if (io->mergeChannels) {
+            io->mergeChannels(merged, ch, NULL);
+            CFRelease(ch);
+        } else {
+            CFRelease(ch);
+        }
+    }
+    if (!merged) return;
+
+    CFMutableDictionaryRef subscribed = NULL;
+    CFMutableDictionaryRef subscription = io->createSubscription(NULL, merged, &subscribed, 0, NULL);
+    CFRelease(merged);
+    if (!subscription) return;
+    io->subscription = subscription;
+    io->subscribed = subscribed;
+    io->ready = 1;
+}
+
+static void ioreport_release(SPReader *reader) {
+    SPIOReport *io = &reader->io;
+    if (io->previous) CFRelease(io->previous);
+    if (io->subscribed) CFRelease(io->subscribed);
+    if (io->handle) dlclose(io->handle);
+    memset(io, 0, sizeof *io);
+}
+
+/* 根据 IOReport 的单位标签把能量增量换算成瓦（mactop 的 energyToWatts） */
+static double energy_to_watts(int64_t energy, CFStringRef unitRef, double durationSeconds) {
+    if (durationSeconds <= 0.05) return NAN;
+    double rate = (double)energy / durationSeconds;
+    char unit[32] = {0};
+    if (unitRef) {
+        CFStringGetCString(unitRef, unit, sizeof unit, kCFStringEncodingUTF8);
+        for (int i = 0; unit[i]; i++) {
+            if (unit[i] == ' ') unit[i] = '\0';
+        }
+    }
+    if (strcmp(unit, "mJ") == 0) {
+        rate /= 1e3;
+    } else if (strcmp(unit, "uJ") == 0) {
+        rate /= 1e6;
+    } else if (strcmp(unit, "nJ") == 0) {
+        rate /= 1e9;
+    } else {
+        /* 单位标签缺失：按数量级自适应，取第一个合理的（<=600W） */
+        double candidates[3] = {rate / 1e9, rate / 1e6, rate / 1e3};
+        rate = NAN;
+        for (int i = 0; i < 3; i++) {
+            if (candidates[i] >= 0.0 && candidates[i] <= 600.0) { rate = candidates[i]; break; }
+        }
+        if (isnan(rate)) return NAN;
+    }
+    if (!(rate >= 0.0) || rate > 600.0) return NAN;
+    return rate;
+}
+
+static int name_contains(const char *haystack, const char *needle) {
+    return strstr(haystack, needle) != NULL;
+}
+
+/* SMC DRAM 功率兜底（PZD1..PZD9，macOS 27 上 Energy Model 的 DRAM 被 gated） */
+static double smc_dram_power(io_connect_t conn) {
+    double total = 0;
+    int found = 0;
+    for (int i = 1; i <= 9; i++) {
+        char key[8];
+        snprintf(key, sizeof key, "PZD%d", i);
+        double v = 0;
+        if (smc_read_number(conn, key, &v) == 0 && v >= 0 && v < 200) {
+            total += v;
+            found = 1;
+        }
+    }
+    return found ? total : NAN;
+}
+
+static void ioreport_read(SPReader *reader, SPReading *out) {
+    SPIOReport *io = &reader->io;
+    if (!io->ready) return;
+
+    CFDictionaryRef current = io->createSamples(io->subscription, io->subscribed, NULL);
+    if (!current) return;
+    double now = CFAbsoluteTimeGetCurrent();
+
+    if (io->previous) {
+        double dt = now - io->previousTime;
+        CFDictionaryRef delta = io->createSamplesDelta(io->previous, current, NULL);
+        if (delta) {
+            CFArrayRef array = (CFArrayRef)CFDictionaryGetValue(delta, CFSTR("IOReportChannels"));
+            CFIndex count = array ? CFArrayGetCount(array) : 0;
+
+            double cpuTotal = 0, cpuTyped = 0;
+            double gpuNamed = 0, gpuAlias = 0;
+            double aneBlock = 0, aneNamed = 0;
+            double dramBlock = 0, dramNamed = 0;
+
+            for (CFIndex i = 0; i < count; i++) {
+                CFDictionaryRef channel = (CFDictionaryRef)CFArrayGetValueAtIndex(array, i);
+                if (!channel) continue;
+                if (io->channelGroup) {
+                    CFStringRef group = io->channelGroup(channel);
+                    char grp[64] = {0};
+                    if (group) CFStringGetCString(group, grp, sizeof grp, kCFStringEncodingUTF8);
+                    if (strcmp(grp, "Energy Model") != 0 && strcmp(grp, "Energy Counters") != 0) {
+                        continue;
+                    }
+                }
+                CFStringRef name = io->channelName(channel);
+                if (!name) continue;
+                char chn[128] = {0};
+                if (!CFStringGetCString(name, chn, sizeof chn, kCFStringEncodingUTF8)) continue;
+
+                CFStringRef unit = io->channelUnit ? io->channelUnit(channel) : NULL;
+                double watts = energy_to_watts(io->simpleValue(channel, 0), unit, dt);
+                if (isnan(watts) || watts < 0.001) continue;
+
+                /* CPU：先分簇（ECPU/PCPU/MCPU…），再总 CPU Energy，二者不叠加 */
+                if (name_contains(chn, "ECPU Energy") || name_contains(chn, "PCPU Energy") ||
+                    name_contains(chn, "MCPU Energy") || name_contains(chn, "eCPUs Energy") ||
+                    name_contains(chn, "pCPUs Energy") || name_contains(chn, "mCPUs Energy")) {
+                    cpuTyped += watts;
+                } else if (name_contains(chn, "CPU Energy")) {
+                    cpuTotal += watts;
+                } else if (strcmp(chn, "GPU Energy") == 0) {
+                    gpuNamed += watts;
+                } else if (strcmp(chn, "GPU") == 0) {
+                    gpuAlias += watts;
+                } else if (name_contains(chn, "ANE") || name_contains(chn, "NPU") ||
+                           name_contains(chn, "Neural") || name_contains(chn, "ane")) {
+                    if (name_contains(chn, "Energy")) aneNamed += watts; else aneBlock += watts;
+                } else if (strncmp(chn, "DRAM", 4) == 0) {
+                    if (name_contains(chn, "Energy")) dramNamed += watts; else dramBlock += watts;
+                }
+            }
+
+            double cpu = cpuTotal > 0 ? cpuTotal : cpuTyped;
+            double gpu = gpuNamed > 0 ? gpuNamed : gpuAlias;
+            double ane = aneBlock > 0 ? aneBlock : aneNamed;
+            double dram = dramBlock > 0 ? dramBlock : dramNamed;
+
+            if (cpu > 0.001) out->cpuPowerW = cpu;
+            if (gpu > 0.001) out->gpuPowerW = gpu;
+            if (ane > 0.001) out->anePowerW = ane;
+            if (dram > 0.001) {
+                out->dramPowerW = dram;
+            } else {
+                double smcDram = smc_dram_power(reader->smcConnection);
+                if (!isnan(smcDram) && smcDram > 0.001) out->dramPowerW = smcDram;
+            }
+
+            CFRelease(delta);
+        }
+    }
+
+    if (io->previous) CFRelease(io->previous);
+    io->previous = current;
+    io->previousTime = now;
+}
+
 SPReader *sp_reader_create(void) {
     SPReader *reader = (SPReader *)calloc(1, sizeof(SPReader));
     if (!reader) return NULL;
@@ -584,11 +803,13 @@ SPReader *sp_reader_create(void) {
         }
     }
     discover_temp_keys(reader);
+    ioreport_init(reader);
     return reader;
 }
 
 void sp_reader_destroy(SPReader *reader) {
     if (!reader) return;
+    ioreport_release(reader);
     if (reader->smcReady) {
         IOServiceClose(reader->smcConnection);
         IOObjectRelease(reader->smcService);
@@ -675,10 +896,62 @@ int32_t sp_reader_dump_fan_keys(SPReader *reader, char *buffer, int32_t size) {
     return used;
 }
 
+int32_t sp_reader_dump_energy_channels(SPReader *reader, char *buffer, int32_t size) {
+    if (!reader || !buffer || size <= 1) return 0;
+    SPIOReport *io = &reader->io;
+    buffer[0] = '\0';
+    if (!io->ready) {
+        snprintf(buffer, (size_t)size, "IOReport 未初始化\n");
+        return (int32_t)strlen(buffer);
+    }
+    CFDictionaryRef s1 = io->createSamples(io->subscription, io->subscribed, NULL);
+    if (!s1) return 0;
+    usleep(500000);
+    CFDictionaryRef s2 = io->createSamples(io->subscription, io->subscribed, NULL);
+    if (!s2) { CFRelease(s1); return 0; }
+    CFDictionaryRef delta = io->createSamplesDelta(s1, s2, NULL);
+    CFRelease(s1);
+    CFRelease(s2);
+    if (!delta) return 0;
+
+    int used = 0;
+    CFArrayRef array = (CFArrayRef)CFDictionaryGetValue(delta, CFSTR("IOReportChannels"));
+    CFIndex count = array ? CFArrayGetCount(array) : 0;
+    for (CFIndex i = 0; i < count && used < size - 2; i++) {
+        CFDictionaryRef channel = (CFDictionaryRef)CFArrayGetValueAtIndex(array, i);
+        if (!channel) continue;
+        char grp[64] = {0}, chn[128] = {0}, unit[32] = {0};
+        CFStringRef g = io->channelGroup ? io->channelGroup(channel) : NULL;
+        if (g) CFStringGetCString(g, grp, sizeof grp, kCFStringEncodingUTF8);
+        if (strcmp(grp, "Energy Model") != 0 && strcmp(grp, "Energy Counters") != 0) continue;
+        CFStringRef n = io->channelName(channel);
+        if (n) CFStringGetCString(n, chn, sizeof chn, kCFStringEncodingUTF8);
+        CFStringRef u = io->channelUnit ? io->channelUnit(channel) : NULL;
+        if (u) CFStringGetCString(u, unit, sizeof unit, kCFStringEncodingUTF8);
+        int64_t raw = io->simpleValue(channel, 0);
+        double watts = energy_to_watts(raw, u, 0.5);
+        char line[256];
+        snprintf(line, sizeof line, "%-4s %-24s unit=%-4s raw=%-14lld watts=%.4f\n",
+                 grp[0] ? "EM" : "?", chn, unit[0] ? unit : "-", (long long)raw,
+                 isnan(watts) ? -1.0 : watts);
+        int len = (int)strlen(line);
+        if (used + len >= size - 1) break;
+        memcpy(buffer + used, line, (size_t)len);
+        used += len;
+        buffer[used] = '\0';
+    }
+    CFRelease(delta);
+    return used;
+}
+
 int32_t sp_reader_read(SPReader *reader, SPReading *out) {
     if (!reader || !out) return -1;
 
     memset(out, 0, sizeof(SPReading));
+    out->cpuPowerW = NAN;
+    out->gpuPowerW = NAN;
+    out->anePowerW = NAN;
+    out->dramPowerW = NAN;
     out->cpuTempC = NAN;
     out->gpuTempC = NAN;
     out->ssdTempC = NAN;
@@ -761,6 +1034,13 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
             out->batteryTempC = smc_first_temp(reader->smcConnection, batteryKeys, 3);
             out->platformTempC = smc_first_temp(reader->smcConnection, platformKeys, 4);
         }
+
+        /* 芯片分项功率（IOReport） */
+        out->cpuPowerW = NAN;
+        out->gpuPowerW = NAN;
+        out->anePowerW = NAN;
+        out->dramPowerW = NAN;
+        ioreport_read(reader, out);
 
         /* 风扇：所有 F?Ac 取最大值，F?Mn / F?Mx / F?Tg 取第一或最大 */
         {

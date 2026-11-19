@@ -58,6 +58,12 @@ typedef struct SPReading {
     double  timeRemainingMinutes; // <0 表示未知/不限
     char    powerSourceState[32]; // "AC Power" / "Battery Power" / "Unknown"
 
+    /* ---- 芯片分项功率（W，读不到为 NaN；来自 IOReport Energy Model） ---- */
+    double  cpuPowerW;
+    double  gpuPowerW;
+    double  anePowerW;
+    double  dramPowerW;
+
     /* ---- 温度（°C，读不到为 NaN） ---- */
     double  cpuTempC;      // Tp* 集群传感器取最大；Intel 回退 TC0P/TC0D
     double  gpuTempC;      // Tg0D / Tg0B / Tg0P，Intel TG0P
@@ -107,6 +113,9 @@ int32_t sp_reader_smc_key_exists(SPReader *reader, const char *key);
 /* 把所有风扇相关 SMC 键（F*）的名称、类型、数值写入缓冲区，供诊断使用。
    返回写入的字节数（不含结尾 0）。 */
 int32_t sp_reader_dump_fan_keys(SPReader *reader, char *buffer, int32_t size);
+
+/* 导出 IOReport 能耗通道（诊断 CPU/GPU/ANE/DRAM 读数用）。 */
+int32_t sp_reader_dump_energy_channels(SPReader *reader, char *buffer, int32_t size);
 
 #ifdef __cplusplus
 }

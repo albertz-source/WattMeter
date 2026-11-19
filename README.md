@@ -60,6 +60,7 @@ A 0.7 W dead band prevents sampling skew from being shown as battery supply.
 | Battery state / % / time left | IOKit `IOPowerSources` | event-driven | |
 | Adapter rating & name | `AdapterDetails` | on plug/unplug | |
 | Fallback telemetry | `PowerTelemetryData` | **≈20 s** | `SystemLoad` / `SystemPowerIn`, adapter loss |
+| Chip power (CPU / GPU / ANE / DRAM) | IOReport `Energy Model` (merged with `GPU Stats` / `CPU Stats` / `AMC Stats`) | ~1 s | private IOReport via `dlopen`; energy deltas converted using the channel unit label. macOS 27 gates the Energy Model CPU/DRAM counters, so those may read “—”; DRAM falls back to SMC `PZD*` |
 | Fan | AppleSMC `F?Ac` / `F?Mn` / `F?Mx` / `F?Tg` | sub-second | keys are discovered at launch (names and `flt` / `fpe2` / `ui16` types differ per model); multiple fans report the maximum RPM. On M3/M4 MacBooks the thermal manager stops the fans entirely when idle, so `0 RPM · stopped` is normal |
 | Display backlight | AppleSMC `PDBR` / `PBwo` / `PBLR` | sub-second | only on Macs with an internal display |
 | USB-C output | AppleSMC `D1..D4 JV×JI`, else `PowerOutDetails` | sub-second | charging input channel is excluded |
@@ -157,7 +158,7 @@ The visual language is inspired by [PowerLens](https://github.com/kinghhhin-desi
 | Panel | 400 × 680 pt dark frosted glass (`NSVisualEffectView` with `.popover` material, behind-window, darkAqua) |
 | Accents | mint `#6EE0C2` (power), amber `#F5C273` (battery), blue `#7DB0FA` (system), purple `#BA9CF5` (adapter/ports) |
 | Type | SF Rounded; 31 pt light primary readout, 19 pt medium row values, 9–10 pt captions |
-| Flow diagram | 364 × 180: on the left, the adapter port on top and the battery port below (the battery is always drawn when one is installed); the Mac in the middle; loads on the right (system / display / ports). Rounded bezier links with gradient, glow and dots showing the direction of power. While charging, the battery link runs **right-to-left** (power flowing into the battery); while discharging or in hybrid mode it runs left-to-right. Link width is fixed at 14 pt so the diagram does not jitter when readings change |
+| Flow diagram | 364 × 180: on the left, the adapter port on top and the battery port below (the battery is always drawn when one is installed); the Mac in the middle; loads on the right — system (split further into CPU / GPU / ANE) plus display / ports. Rounded bezier links with gradient, glow and dots showing the direction of power. While charging, the battery link runs **right-to-left** (power flowing into the battery); while discharging or in hybrid mode it runs left-to-right. Link width is fixed at 14 pt so the diagram does not jitter when readings change |
 | Temperatures | CPU / GPU / SSD / battery chips in the panel; a full temperature card in the main window. Values turn amber above 65 °C and red above 80 °C |
 | Charts | Stacked area of adapter vs battery, plus a total/net-battery line chart in the main window |
 | Main window | 1020 × 832 pt (scrollable if the user shrinks it): flow diagram, stacked area chart, line chart, and adapter / battery / temperature cards |
@@ -249,6 +250,7 @@ drag `WattMeter.app` into Applications.
 ./.build/bin/wattprobe --split-test   # adapter/battery/charge split rules
 .build/bin/wattprobe --battery      # full battery-machine diagnostic
 ./.build/bin/wattprobe --fans         # list every fan SMC key with its decoded value
+./.build/bin/wattprobe --chips        # dump IOReport energy channels (CPU/GPU/ANE/DRAM)
 
 # The installed app binary can run the same diagnostics (no developer tools needed)
 /Applications/WattMeter.app/Contents/MacOS/WattMeter --fans
@@ -285,7 +287,9 @@ If `PSTR` / `PDTR` are missing on your model, the app falls back to `PowerTeleme
 3. On Intel Macs `PSTR`/`PDTR` usually exist; if not, the app falls back to IOPS voltage/current plus telemetry.
 4. No persistence, CSV export, notifications or login item yet.
 5. Builds are ad-hoc signed, not notarised.
-6. Sub-system power (CPU / GPU / ANE / DRAM) via IOReport is not implemented.
+6. Sub-system power comes from the private IOReport framework. macOS 27 gates the Energy Model
+   CPU/DRAM counters (they stay at 0 unless an entitled sampler runs), so on macOS 27 those values
+   may show “—”; macOS 26 and older work normally. GPU counters keep working.
 7. Temperature keys differ between models. The app discovers `Tp*` / `Tg*` / `TH0*` keys by enumerating SMC at launch, but some Macs simply do not expose a GPU or battery sensor (desktop Macs have no battery); those rows then show “—”.
 
 ---

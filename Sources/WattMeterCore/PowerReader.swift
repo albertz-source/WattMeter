@@ -175,6 +175,9 @@ public final class PowerReader {
         func temp(_ value: Double) -> Double? {
             value.isFinite && value > -20 && value < 150 ? value : nil
         }
+        func chip(_ watts: Double) -> Double? {
+            watts.isFinite && watts >= 0.01 && watts < 600 ? watts : nil
+        }
         let batteryVoltageV: Double? = raw.batteryVoltage_mV > 1000 ? raw.batteryVoltage_mV / 1000.0 : nil
         let batteryCurrentA: Double? = raw.batteryInstalled != 0 ? raw.batteryAmperage_mA / 1000.0 : nil
         let fanW: Double? = raw.fanAvailable != 0 ? raw.fanRPM : nil
@@ -202,6 +205,10 @@ public final class PowerReader {
             timeRemainingMinutes: remaining,
             displayPowerW: displayW,
             portPowerW: portW,
+            cpuPowerW: chip(raw.cpuPowerW),
+            gpuPowerW: chip(raw.gpuPowerW),
+            anePowerW: chip(raw.anePowerW),
+            dramPowerW: chip(raw.dramPowerW),
             inputVoltageV: inputV,
             inputCurrentA: inputA,
             batteryVoltageV: batteryVoltageV,
@@ -287,6 +294,15 @@ public final class PowerReader {
         guard let handle else { return "" }
         var buffer = [CChar](repeating: 0, count: 16384)
         let written = sp_reader_dump_fan_keys(handle, &buffer, 16384)
+        guard written > 0 else { return "" }
+        return String(cString: buffer)
+    }
+
+    /// 导出 IOReport 能耗通道（诊断用）
+    public func dumpEnergyChannels() -> String {
+        guard let handle else { return "" }
+        var buffer = [CChar](repeating: 0, count: 32768)
+        let written = sp_reader_dump_energy_channels(handle, &buffer, 32768)
         guard written > 0 else { return "" }
         return String(cString: buffer)
     }
