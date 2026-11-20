@@ -20,6 +20,12 @@ It shows:
 
 ![about](https://raw.githubusercontent.com/albertz-source/WattMeter/main/docs/preview-about.png)
 
+### Flow diagram: single hub on each side
+
+All links now converge into one point on each edge of the machine node (left and right midpoints)
+instead of attaching at several heights, so the diagram reads as one hub fanning out to the left
+sources and right loads.
+
 ### Also included from 1.3.0
 
 - CPU / GPU / ANE / DRAM power in the flow diagram (IOReport `Energy Model` merged with `GPU Stats` /

@@ -235,22 +235,22 @@ public struct FlowDiagram: View {
                 if onAC {
                     // 电源在上、电池在下，两条端口都常驻
                     link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: adapterY),
-                         to: CGPoint(x: centerNodeX, y: 78),
+                         to: CGPoint(x: centerNodeX, y: centerY),
                          watts: max(total, adapterToLoadW), tint: Palette.mint)
 
                     if batteryCharging {
                         // 充电：能量从整机流向电池（路径方向 = 能量方向）
-                        link(from: CGPoint(x: centerNodeX, y: 112),
+                        link(from: CGPoint(x: centerNodeX, y: centerY),
                              to: CGPoint(x: leftNodeX + leftNodeWidth, y: batteryY),
                              watts: chargeW, tint: batteryTint)
                     } else if batterySupplying {
                         link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: batteryY),
-                             to: CGPoint(x: centerNodeX, y: 112),
+                             to: CGPoint(x: centerNodeX, y: centerY),
                              watts: batteryFlowW, tint: batteryTint)
                     } else {
                         // 已充满 / 待机：保留一条淡线表示连接，但无流动
                         link(from: CGPoint(x: leftNodeX + leftNodeWidth, y: batteryY),
-                             to: CGPoint(x: centerNodeX, y: 112),
+                             to: CGPoint(x: centerNodeX, y: centerY),
                              watts: 0, tint: batteryTint, muted: true, flowing: false)
                     }
                 } else {
@@ -269,7 +269,7 @@ public struct FlowDiagram: View {
             // 右侧：系统（再分 CPU / GPU / ANE） + 屏幕 / 接口
             let mainSystemX: CGFloat = chipItems.isEmpty ? rightNodeX : systemNodeX
             let mainSystemY: CGFloat = chipItems.isEmpty ? 34 : 62
-            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: mainSystemY),
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: centerY),
                  to: CGPoint(x: mainSystemX, y: mainSystemY),
                  watts: system, tint: systemTint)
             if !chipItems.isEmpty {
@@ -280,10 +280,10 @@ public struct FlowDiagram: View {
                 }
             }
             let sideX: CGFloat = chipItems.isEmpty ? rightNodeX : systemNodeX
-            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 116),
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: centerY),
                  to: CGPoint(x: sideX, y: 116),
                  watts: display, tint: displayTint, muted: display == nil)
-            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: 150),
+            link(from: CGPoint(x: centerNodeX + centerNodeWidth, y: centerY),
                  to: CGPoint(x: sideX, y: 150),
                  watts: ports, tint: portTint, muted: ports == nil)
         }
