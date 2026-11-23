@@ -62,6 +62,7 @@ public struct SourceAreaChart: View {
                 }
             }
         }
+        .chartPlotStyle { plot in plot.clipped() }
         .frame(height: height)
     }
 
@@ -152,8 +153,9 @@ public struct PowerLineChart: View {
 
     public var body: some View {
         let rows = Self.rows(readings)
-        let peak = max(20, (readings.map(\.totalW).max() ?? 0) * 1.15)
-        let low = min(0, (readings.compactMap(\.batteryPowerW).min() ?? 0) * 1.15)
+        // Y 轴必须同时包住两条线：只按整机功耗算时，充电中的电池净功率（正值）
+        // 会超过上限、被画到框外。
+        let domain = Self.powerDomain(readings)
 
         Chart(rows) { row in
             LineMark(
@@ -171,7 +173,7 @@ public struct PowerLineChart: View {
             "电池净功率": Palette.battery,
         ])
         .chartLegend(.hidden)
-        .chartYScale(domain: low...peak)
+        .chartYScale(domain: domain)
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                 AxisGridLine().foregroundStyle(Color.white.opacity(0.08))
@@ -190,7 +192,21 @@ public struct PowerLineChart: View {
                 }
             }
         }
+        .chartPlotStyle { plot in plot.clipped() }
         .frame(height: height)
+    }
+
+    /// 同时覆盖整机功率与电池净功率（含正负），避免电池充电功率高于整机时画到框外
+    private static func powerDomain(_ readings: [PowerReading]) -> ClosedRange<Double> {
+        var values: [Double] = []
+        values.reserveCapacity(readings.count * 2)
+        for reading in readings {
+            values.append(reading.totalW)
+            if let battery = reading.batteryPowerW { values.append(battery) }
+        }
+        let peak = max(20, (values.max() ?? 0) * 1.15)
+        let low = min(0, (values.min() ?? 0) * 1.15)
+        return low...peak
     }
 
     private static func rows(_ readings: [PowerReading]) -> [LineRow] {
