@@ -18,6 +18,8 @@
 #include <net/route.h>
 #include <net/if.h>
 #include <net/if_var.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
 #include <IOKit/ps/IOPowerSources.h>
 #include <IOKit/ps/IOPSKeys.h>
 #include <mach/mach.h>
@@ -489,6 +491,113 @@ static void read_memory_stats(SPReading *r) {
 /* 只统计 en*（以太网 / Wi-Fi），避免 utun / awdl / bridge 重复计数。      */
 /* ------------------------------------------------------------------ */
 
+/* en* 是否有可用地址（IPv4，或非 link-local 的 IPv6） */
+static void collect_interface_addresses(char names[][IFNAMSIZ], int *count, int maxCount) {
+    *count = 0;
+    struct ifaddrs *list = NULL;
+    if (getifaddrs(&list) != 0) return;
+    for (struct ifaddrs *ifa = list; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || !ifa->ifa_name) continue;
+        if (strncmp(ifa->ifa_name, "en", 2) != 0) continue;
+        int usable = 0;
+        if (ifa->ifa_addr->sa_family == AF_INET) {
+            usable = 1;
+        } else if (ifa->ifa_addr->sa_family == AF_INET6) {
+            const struct sockaddr_in6 *a6 = (const struct sockaddr_in6 *)ifa->ifa_addr;
+            /* 跳过 fe80::/10 链路本地地址 */
+            usable = !(a6->sin6_addr.__u6_addr.__u6_addr8[0] == 0xfe &&
+                       (a6->sin6_addr.__u6_addr.__u6_addr8[1] & 0xc0) == 0x80);
+        }
+        if (!usable) continue;
+        int already = 0;
+        for (int i = 0; i < *count; i++) {
+            if (strcmp(names[i], ifa->ifa_name) == 0) { already = 1; break; }
+        }
+        if (!already && *count < maxCount) {
+            snprintf(names[*count], IFNAMSIZ, "%s", ifa->ifa_name);
+            (*count)++;
+        }
+    }
+    freeifaddrs(list);
+}
+
+static void add_name_once(char names[][IFNAMSIZ], int *count, int maxCount, const char *name) {
+    if (!name || name[0] == '\0' || *count >= maxCount) return;
+    for (int i = 0; i < *count; i++) {
+        if (strcmp(names[i], name) == 0) return;
+    }
+    snprintf(names[*count], IFNAMSIZ, "%s", name);
+    (*count)++;
+}
+
+/* 递归找子节点里的 BSD Name（Wi-Fi 接口节点在 DriverKit 服务下面） */
+static void collect_bsd_names_below(io_registry_entry_t parent, char names[][IFNAMSIZ],
+                                    int *count, int maxCount, int depth) {
+    if (depth > 3) return;
+    io_iterator_t iter = 0;
+    if (IORegistryEntryGetChildIterator(parent, kIOServicePlane, &iter) != KERN_SUCCESS) return;
+    io_registry_entry_t child = 0;
+    while ((child = IOIteratorNext(iter))) {
+        CFTypeRef nameRef = IORegistryEntryCreateCFProperty(child, CFSTR("BSD Name"),
+                                                           kCFAllocatorDefault, 0);
+        if (nameRef && CFGetTypeID(nameRef) == CFStringGetTypeID()) {
+            char name[IFNAMSIZ] = {0};
+            CFStringGetCString((CFStringRef)nameRef, name, sizeof name, kCFStringEncodingUTF8);
+            if (strncmp(name, "en", 2) == 0) {
+                add_name_once(names, count, maxCount, name);
+            }
+        }
+        if (nameRef) CFRelease(nameRef);
+        collect_bsd_names_below(child, names, count, maxCount, depth + 1);
+        IOObjectRelease(child);
+    }
+    IOObjectRelease(iter);
+}
+
+/* Wi-Fi 接口名：Apple Silicon 上是 IOUserNetworkWLAN（DriverKit），
+   Intel 机型上是 IO80211Interface */
+static void collect_wifi_interfaces(char names[][IFNAMSIZ], int *count, int maxCount) {
+    *count = 0;
+    const char *classes[] = {"IOUserNetworkWLAN", "IO80211Interface"};
+    for (int c = 0; c < 2; c++) {
+        io_iterator_t iter = 0;
+        if (IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching(classes[c]),
+                                         &iter) != KERN_SUCCESS) {
+            continue;
+        }
+        io_service_t svc = 0;
+        while ((svc = IOIteratorNext(iter))) {
+            CFTypeRef nameRef = IORegistryEntryCreateCFProperty(svc, CFSTR("BSD Name"),
+                                                               kCFAllocatorDefault, 0);
+            if (nameRef && CFGetTypeID(nameRef) == CFStringGetTypeID()) {
+                char name[IFNAMSIZ] = {0};
+                CFStringGetCString((CFStringRef)nameRef, name, sizeof name, kCFStringEncodingUTF8);
+                if (strncmp(name, "en", 2) == 0) {
+                    add_name_once(names, count, maxCount, name);
+                }
+            }
+            if (nameRef) CFRelease(nameRef);
+            collect_bsd_names_below(svc, names, count, maxCount, 0);
+            IOObjectRelease(svc);
+        }
+        IOObjectRelease(iter);
+    }
+}
+
+static int name_in_list(char names[][IFNAMSIZ], int count, const char *name) {
+    for (int i = 0; i < count; i++) {
+        if (strcmp(names[i], name) == 0) return 1;
+    }
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* 网络：sysctl(NET_RT_IFLIST2) 的 64 位接口计数器                      */
+/*                                                                     */
+/* 只统计 en*（以太网 / Wi-Fi / 共享），避免 utun / awdl / bridge 重复计数。 */
+/* 逐个接口保留明细，界面按接口逐个显示。                                  */
+/* ------------------------------------------------------------------ */
+
 static void read_network_stats(SPReading *r) {
     int mib[6] = {CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0};
     size_t len = 0;
@@ -500,10 +609,26 @@ static void read_network_stats(SPReading *r) {
         return;
     }
 
-    unsigned long long inBytes = 0, outBytes = 0;
-    unsigned long long linkBps = 0, bestScore = 0;
-    char primary[IFNAMSIZ] = "";
-    int count = 0;
+    char addrNames[SP_MAX_NET_IFACES][IFNAMSIZ];
+    int addrCount = 0;
+    collect_interface_addresses(addrNames, &addrCount, SP_MAX_NET_IFACES);
+
+    char wifiNames[SP_MAX_NET_IFACES][IFNAMSIZ];
+    int wifiCount = 0;
+    collect_wifi_interfaces(wifiNames, &wifiCount, SP_MAX_NET_IFACES);
+
+    /* 先按接口序号收集候选，保证显示顺序稳定（en0、en1 …） */
+    struct {
+        int index;
+        char name[IFNAMSIZ];
+        int up;
+        int wifi;
+        unsigned long long inBytes;
+        unsigned long long outBytes;
+        unsigned long long baud;
+        int hasAddress;
+    } candidates[SP_MAX_NET_IFACES];
+    int candidateCount = 0;
 
     char *next = buf;
     char *end = buf + len;
@@ -514,21 +639,16 @@ static void read_network_stats(SPReading *r) {
             char name[IFNAMSIZ] = {0};
             if (if_indextoname(if2->ifm_index, name) && strncmp(name, "en", 2) == 0 &&
                 !(if2->ifm_flags & IFF_LOOPBACK)) {
-                unsigned long long i = if2->ifm_data.ifi_ibytes;
-                unsigned long long o = if2->ifm_data.ifi_obytes;
-                unsigned long long baud = if2->ifm_data.ifi_baudrate;
-                int up = (if2->ifm_flags & IFF_UP) ? 1 : 0;
-                inBytes += i;
-                outBytes += o;
-                count++;
-                if (up && baud > 0) {
-                    /* 有流量的接口优先，其次比较链路速率 */
-                    unsigned long long score = (i + o > 0 ? (1ULL << 62) : 0) + baud;
-                    if (score > bestScore) {
-                        bestScore = score;
-                        linkBps = baud;
-                        snprintf(primary, sizeof primary, "%s", name);
-                    }
+                if (candidateCount < SP_MAX_NET_IFACES) {
+                    candidates[candidateCount].index = if2->ifm_index;
+                    snprintf(candidates[candidateCount].name, IFNAMSIZ, "%s", name);
+                    candidates[candidateCount].up = (if2->ifm_flags & IFF_UP) ? 1 : 0;
+                    candidates[candidateCount].wifi = name_in_list(wifiNames, wifiCount, name);
+                    candidates[candidateCount].inBytes = if2->ifm_data.ifi_ibytes;
+                    candidates[candidateCount].outBytes = if2->ifm_data.ifi_obytes;
+                    candidates[candidateCount].baud = if2->ifm_data.ifi_baudrate;
+                    candidates[candidateCount].hasAddress = name_in_list(addrNames, addrCount, name);
+                    candidateCount++;
                 }
             }
         }
@@ -536,13 +656,63 @@ static void read_network_stats(SPReading *r) {
     }
     free(buf);
 
-    if (count > 0) {
-        r->networkAvailable = 1;
-        r->netInterfaceCount = count;
-        r->netInBytes = (double)inBytes;
-        r->netOutBytes = (double)outBytes;
-        r->netLinkBps = (double)linkBps;
-        snprintf(r->netPrimaryName, sizeof r->netPrimaryName, "%s", primary);
+    if (candidateCount == 0) return;
+
+    /* 简单按接口序号冒泡排序，保证 en0 在 en1 之前 */
+    for (int i = 0; i < candidateCount - 1; i++) {
+        for (int j = 0; j < candidateCount - 1 - i; j++) {
+            if (candidates[j].index > candidates[j + 1].index) {
+                __typeof__(candidates[0]) tmp = candidates[j];
+                candidates[j] = candidates[j + 1];
+                candidates[j + 1] = tmp;
+            }
+        }
+    }
+
+    unsigned long long inBytes = 0, outBytes = 0;
+    int shown = 0;
+    for (int i = 0; i < candidateCount; i++) {
+        int hasTraffic = (candidates[i].inBytes + candidates[i].outBytes) > 0;
+        /* 只把「已连接」的接口当作一种连接方式：up 且有地址，或历史上有流量 */
+        int connected = candidates[i].up && (candidates[i].hasAddress || hasTraffic);
+        if (!connected) continue;
+
+        inBytes += candidates[i].inBytes;
+        outBytes += candidates[i].outBytes;
+        if (shown < SP_MAX_NET_IFACES) {
+            snprintf(r->netNames[shown], sizeof r->netNames[shown], "%s", candidates[i].name);
+            r->netIsWiFi[shown] = candidates[i].wifi;
+            r->netIsUp[shown] = candidates[i].up;
+            r->netInBytesPerInterface[shown] = (double)candidates[i].inBytes;
+            r->netOutBytesPerInterface[shown] = (double)candidates[i].outBytes;
+            r->netLinkBpsPerInterface[shown] = (double)candidates[i].baud;
+            shown++;
+        }
+    }
+    if (shown == 0) return;
+
+    /* 主用接口：有流量的里面挑链路速率最高的，否则挑速率最高的 */
+    int primary = -1;
+    unsigned long long bestScore = 0;
+    for (int i = 0; i < shown; i++) {
+        unsigned long long traffic = (unsigned long long)(r->netInBytesPerInterface[i] +
+                                                          r->netOutBytesPerInterface[i]);
+        unsigned long long score = (traffic > 0 ? (1ULL << 62) : 0)
+                                 + (unsigned long long)r->netLinkBpsPerInterface[i];
+        if (primary < 0 || score > bestScore) {
+            bestScore = score;
+            primary = i;
+        }
+    }
+
+    r->networkAvailable = 1;
+    r->netInterfaceCount = shown;
+    r->netDetailCount = shown;
+    r->netInBytes = (double)inBytes;
+    r->netOutBytes = (double)outBytes;
+    if (primary >= 0) {
+        r->netLinkBps = r->netLinkBpsPerInterface[primary];
+        snprintf(r->netPrimaryName, sizeof r->netPrimaryName, "%s", r->netNames[primary]);
     }
 }
 

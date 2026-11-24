@@ -14,8 +14,8 @@ public final class PowerReader {
     private var lastDiskSample: (read: Double, write: Double, at: Date)?
     /// 启动卷容量缓存（statfs 不必每秒都做）
     private var cachedVolume: (free: Double?, total: Double?, at: Date)?
-    /// 网络计数器上一次的采样值（累计字节数 → B/s）
-    private var lastNetSample: (inBytes: Double, outBytes: Double, at: Date)?
+    /// 每个网络接口上一次的采样值（累计字节数 → B/s）
+    private var lastNetSamples: [String: (inBytes: Double, outBytes: Double, at: Date)] = [:]
 
     public init() {
         handle = sp_reader_create()
@@ -195,20 +195,57 @@ public final class PowerReader {
 
         let now = Date()
 
-        // ── 网络：累计字节数 → 每秒速率 ──────────────────────────────
+        // ── 网络：逐接口累计字节数 → 每秒速率 ────────────────────────
+        var netInterfaces: [NetworkInterface] = []
         var netInRate: Double?
         var netOutRate: Double?
         if raw.networkAvailable != 0 {
-            if let last = lastNetSample {
-                let elapsed = now.timeIntervalSince(last.at)
-                if elapsed > 0.2, elapsed < 10 {
-                    netInRate = max(0, raw.netInBytes - last.inBytes) / elapsed
-                    netOutRate = max(0, raw.netOutBytes - last.outBytes) / elapsed
+            let names = Self.stringArray(raw.netNames, count: Int(SP_MAX_NET_IFACES), width: 16)
+            let wifi = Self.intArray(raw.netIsWiFi, count: Int(SP_MAX_NET_IFACES))
+            let up = Self.intArray(raw.netIsUp, count: Int(SP_MAX_NET_IFACES))
+            let inTotals = Self.doubleArray(raw.netInBytesPerInterface, count: Int(SP_MAX_NET_IFACES))
+            let outTotals = Self.doubleArray(raw.netOutBytesPerInterface, count: Int(SP_MAX_NET_IFACES))
+            let links = Self.doubleArray(raw.netLinkBpsPerInterface, count: Int(SP_MAX_NET_IFACES))
+            let count = min(Int(raw.netDetailCount), Int(SP_MAX_NET_IFACES))
+
+            var nextSamples: [String: (inBytes: Double, outBytes: Double, at: Date)] = [:]
+            var sumIn: Double = 0
+            var sumOut: Double = 0
+            var haveIn = false
+            var haveOut = false
+            for index in 0..<max(0, count) {
+                let name = names[index]
+                guard !name.isEmpty else { continue }
+                let inTotal = inTotals[index]
+                let outTotal = outTotals[index]
+                var inRate: Double?
+                var outRate: Double?
+                if let last = lastNetSamples[name] {
+                    let elapsed = now.timeIntervalSince(last.at)
+                    if elapsed > 0.2, elapsed < 10 {
+                        inRate = max(0, inTotal - last.inBytes) / elapsed
+                        outRate = max(0, outTotal - last.outBytes) / elapsed
+                    }
                 }
+                nextSamples[name] = (inTotal, outTotal, now)
+                if let value = inRate { sumIn += value; haveIn = true }
+                if let value = outRate { sumOut += value; haveOut = true }
+                netInterfaces.append(NetworkInterface(
+                    name: name,
+                    isWiFi: wifi[index] != 0,
+                    isUp: up[index] != 0,
+                    linkBps: links[index] > 0 ? links[index] : nil,
+                    inBytesTotal: inTotal,
+                    outBytesTotal: outTotal,
+                    inBytesPerSec: inRate,
+                    outBytesPerSec: outRate
+                ))
             }
-            lastNetSample = (raw.netInBytes, raw.netOutBytes, now)
+            lastNetSamples = nextSamples
+            netInRate = haveIn ? sumIn : nil
+            netOutRate = haveOut ? sumOut : nil
         } else {
-            lastNetSample = nil
+            lastNetSamples = [:]
         }
 
         // ── 磁盘 I/O：累计字节数 → 每秒速率 ──────────────────────────
@@ -288,6 +325,7 @@ public final class PowerReader {
             memoryCompressedBytes: raw.memoryAvailable != 0 ? raw.memoryCompressedBytes : nil,
             swapUsedBytes: raw.swapUsedBytes >= 0 ? raw.swapUsedBytes : nil,
             swapTotalBytes: raw.swapTotalBytes >= 0 ? raw.swapTotalBytes : nil,
+            networkInterfaces: netInterfaces,
             netInBytesPerSec: netInRate,
             netOutBytesPerSec: netOutRate,
             netInBytesTotal: raw.networkAvailable != 0 ? raw.netInBytes : nil,
@@ -470,6 +508,33 @@ extension SPReading {
             let count = min(max(Int(portRailCount), 0), 4)
             let values = buffer.bindMemory(to: Double.self)
             return (0..<count).map { values[$0] }
+        }
+    }
+}
+
+extension PowerReader {
+    /// 读取 C 结构里的定长字符串数组
+    static func stringArray<T>(_ tuple: T, count: Int, width: Int) -> [String] {
+        withUnsafeBytes(of: tuple) { buffer in
+            guard let base = buffer.baseAddress else { return [] }
+            return (0..<count).map { index in
+                let pointer = base.advanced(by: index * width).assumingMemoryBound(to: CChar.self)
+                return String(cString: pointer)
+            }
+        }
+    }
+
+    /// 读取 C 结构里的 Int32 数组
+    static func intArray<T>(_ tuple: T, count: Int) -> [Int32] {
+        withUnsafeBytes(of: tuple) { buffer in
+            Array(buffer.bindMemory(to: Int32.self).prefix(count))
+        }
+    }
+
+    /// 读取 C 结构里的 Double 数组
+    static func doubleArray<T>(_ tuple: T, count: Int) -> [Double] {
+        withUnsafeBytes(of: tuple) { buffer in
+            Array(buffer.bindMemory(to: Double.self).prefix(count))
         }
     }
 }

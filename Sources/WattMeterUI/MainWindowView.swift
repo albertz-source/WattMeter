@@ -65,11 +65,11 @@ public struct MainWindowView: View {
                                     onSelect: { store.setWindow($0) }
                                 )
                             }
-                            SourceAreaChart(readings: samples, height: 150)
+                            SourceAreaChart(readings: samples, height: 140)
                         }
                     }
                     Card(title: L("整机功耗 / 电池净功率")) {
-                        PowerLineChart(readings: samples, height: 116)
+                        PowerLineChart(readings: samples, height: 100)
                     }
 
                     Card(title: L("磁盘读写")) {
@@ -222,15 +222,15 @@ public struct MainWindowView: View {
                                  latest.memoryUsedPercentText,
                                  detail: latest.memoryText
                                      + (latest.swapText.map { " · " + L("交换") + " " + $0 } ?? ""))
-                        infoLine(L("网络"),
-                                 latest.hasNetwork ? "↓ " + latest.netInText + "  ↑ " + latest.netOutText : "—",
-                                 detail: nil)
-                        infoLine(L("连接"),
-                                 latest.netLinkText,
-                                 detail: latest.hasNetwork
-                                     ? L("开机以来") + " ↓ " + latest.netInTotalText
-                                         + " ↑ " + latest.netOutTotalText
-                                     : nil)
+                        // 每种连接方式一行：以太网 / Wi-Fi 分别显示链路速率与实时速率
+                        ForEach(latest.networkInterfaces) { iface in
+                            networkLine(iface)
+                        }
+                        if !latest.networkInterfaces.isEmpty {
+                            infoLine(L("开机以来"),
+                                     "↓ " + latest.netInTotalText + "  ↑ " + latest.netOutTotalText,
+                                     labelWidth: 52)
+                        }
                     }
                 }
             }
@@ -244,13 +244,43 @@ public struct MainWindowView: View {
 
 
 
+    /// 单个网络接口一行：图标 + 名称 + 链路速率 + 实时速率
+    private func networkLine(_ iface: NetworkInterface) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: iface.icon)
+                .font(.system(size: 9))
+                .foregroundStyle(iface.isWiFi ? Palette.blue : Palette.mint)
+                .frame(width: 11)
+            Text(iface.name)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+                .frame(width: 22, alignment: .leading)
+            Text(iface.linkText)
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(width: 52, alignment: .leading)
+            Text("↓ " + iface.inText)
+                .font(.system(size: 8.5))
+                .foregroundStyle(Palette.mint.opacity(0.85))
+                .lineLimit(1)
+            Text("↑ " + iface.outText)
+                .font(.system(size: 8.5))
+                .foregroundStyle(Palette.amber.opacity(0.85))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .lineLimit(1)
+    }
+
     /// 内存 / 网络卡片里的紧凑信息行
-    private func infoLine(_ label: String, _ value: String, detail: String? = nil) -> some View {
+    private func infoLine(_ label: String, _ value: String, detail: String? = nil,
+                          labelWidth: CGFloat = 26) -> some View {
         HStack(spacing: 6) {
             Text(label)
                 .font(.system(size: 9))
                 .foregroundStyle(.white.opacity(0.45))
-                .frame(width: 26, alignment: .leading)
+                .frame(width: labelWidth, alignment: .leading)
             Text(value)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .monospacedDigit()

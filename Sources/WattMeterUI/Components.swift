@@ -522,7 +522,7 @@ public struct DiskChip: View {
 /// 内存 / 网络徽章
 public struct StatChip: View {
     public enum Kind {
-        case memory, down, up, link
+        case memory, down, up, link, wifi, ethernet
     }
 
     let kind: Kind
@@ -543,6 +543,8 @@ public struct StatChip: View {
         case .down: return "arrow.down"
         case .up: return "arrow.up"
         case .link: return "bolt.horizontal.circle"
+        case .wifi: return "wifi"
+        case .ethernet: return "cable.connector"
         }
     }
 
@@ -552,6 +554,8 @@ public struct StatChip: View {
         case .down: return Palette.mint
         case .up: return Palette.amber
         case .link: return Palette.blue
+        case .wifi: return Palette.blue
+        case .ethernet: return Palette.mint
         }
     }
 
@@ -582,7 +586,7 @@ public struct StatChip: View {
     }
 }
 
-/// 面板里的内存 / 网络条
+/// 面板里的内存 / 网络条：内存 + 每个已连接接口各一个徽章，下面一行合计
 public struct SystemStrip: View {
     public enum Style {
         case compact, detailed
@@ -596,28 +600,40 @@ public struct SystemStrip: View {
         self.style = style
     }
 
+    private var interfaces: [NetworkInterface] {
+        reading?.networkInterfaces ?? []
+    }
+
     public var body: some View {
-        if let r = reading, r.memoryUsedShare != nil || r.hasNetwork {
-            HStack(spacing: 6) {
-                if r.memoryUsedShare != nil {
-                    StatChip(kind: .memory,
-                             label: L("内存"),
-                             value: r.memoryUsedPercentText,
-                             detail: style == .detailed ? r.memoryText : nil)
-                }
-                if r.hasNetwork {
-                    StatChip(kind: .down, value: r.netInText)
-                    StatChip(kind: .up, value: r.netOutText)
-                    if r.netLinkBps != nil {
-                        StatChip(kind: .link,
-                                 label: style == .detailed ? L("连接") : "",
-                                 value: r.netLinkText,
-                                 detail: style == .detailed ? r.netPrimaryInterface : nil)
+        if let r = reading, r.memoryUsedShare != nil || !interfaces.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    if r.memoryUsedShare != nil {
+                        StatChip(kind: .memory,
+                                 label: L("内存"),
+                                 value: r.memoryUsedPercentText,
+                                 detail: style == .detailed ? r.memoryText : nil)
                     }
+                    // 每种连接方式一个徽章：以太网 / Wi-Fi 各自显示链路速率
+                    ForEach(interfaces.prefix(4)) { iface in
+                        StatChip(kind: iface.isWiFi ? .wifi : .ethernet,
+                                 label: iface.name,
+                                 value: iface.linkText)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                if !interfaces.isEmpty {
+                    HStack(spacing: 5) {
+                        Text("↓ " + r.netInText + "  ↑ " + r.netOutText)
+                            .foregroundStyle(.white.opacity(0.55))
+                        Text("· " + L("开机以来") + " ↓ " + r.netInTotalText + " ↑ " + r.netOutTotalText)
+                            .foregroundStyle(.white.opacity(0.35))
+                        Spacer(minLength: 0)
+                    }
+                    .font(.system(size: 9))
+                    .lineLimit(1)
+                }
             }
-            .lineLimit(1)
         }
     }
 }

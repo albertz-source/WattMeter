@@ -213,9 +213,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tip += "\n" + L("内存") + " " + reading.memoryUsedPercentText
             tip += " (" + reading.memoryText + ")"
         }
+        for interface in reading.networkInterfaces {
+            tip += "\n" + interface.name + " " + interface.linkText
+            tip += " ↓ " + interface.inText + " ↑ " + interface.outText
+            tip += " · " + interface.inTotalText + " / " + interface.outTotalText
+        }
         if reading.hasNetwork {
-            tip += "\n" + L("网络") + " ↓ " + reading.netInText + " · ↑ " + reading.netOutText
-            tip += " · " + reading.netLinkText
+            tip += "\n" + L("合计") + " ↓ " + reading.netInText + " ↑ " + reading.netOutText
             tip += " · " + L("开机以来") + " ↓ " + reading.netInTotalText + " ↑ " + reading.netOutTotalText
         }
         if reading.hasSSDSmart {
@@ -394,14 +398,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onQuit: { NSApp.terminate(nil) }
         )
         let controller = NSHostingController(rootView: root)
-        // 面板实测高度 799pt（电池健康、磁盘 / SSD、内存 / 网络），留 1pt 余量
-        controller.preferredContentSize = NSSize(width: 400, height: 800)
+        // 面板实测高度 815pt（电池健康、磁盘 / SSD、内存 / 每个网络接口），留 1pt 余量
+        controller.preferredContentSize = NSSize(width: 400, height: 816)
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentSize = NSSize(width: 400, height: 800)
+        popover.contentSize = NSSize(width: 400, height: 816)
         popover.contentViewController = controller
         self.popover = popover
     }
@@ -431,10 +435,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let window = NSWindow(contentViewController: controller)
             window.title = "WattMeter"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            // 内容实测高度约 895pt（磁盘 / SSD 卡片 + 内存 / 网络卡片）；按真实内容开窗，
+            // 内容实测高度约 921pt（磁盘 / SSD 卡片 + 内存 / 网络卡片）；按真实内容开窗，
             // 避免底部被裁掉。
             // 用户手动缩小时由 MainWindowView 的 ScrollView 兜底。
-            window.setContentSize(NSSize(width: 1020, height: 900))
+            window.setContentSize(NSSize(width: 1020, height: 928))
             window.minSize = NSSize(width: 960, height: 600)
             window.isReleasedWhenClosed = false
             window.tabbingMode = .disallowed

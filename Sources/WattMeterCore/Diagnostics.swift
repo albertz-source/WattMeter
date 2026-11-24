@@ -65,13 +65,18 @@ public enum Diagnostics {
         lines.append("  App \(gb(r.memoryAppBytes)) · Wired \(gb(r.memoryWiredBytes))"
                      + " · Compressed \(gb(r.memoryCompressedBytes))"
                      + " · 交换 \(r.swapText ?? "0 B")")
-        if let iface = r.netPrimaryInterface {
-            lines.append("网络: \(iface)  连接速率 \(r.netLinkText)"
-                         + "  ↓ \(r.netInText)  ↑ \(r.netOutText)")
+        if r.networkInterfaces.isEmpty {
+            lines.append("网络: 没有已连接的 en* 接口")
         } else {
-            lines.append("网络: 没有可用的 en* 接口")
+            for interface in r.networkInterfaces {
+                lines.append("  \(interface.name) \(interface.isWiFi ? "Wi-Fi" : "以太网")"
+                             + "  连接 \(interface.linkText)"
+                             + "  ↓ \(interface.inText) ↑ \(interface.outText)"
+                             + "  开机以来 ↓\(interface.inTotalText) ↑\(interface.outTotalText)")
+            }
         }
-        lines.append("开机以来: 流入 \(r.netInTotalText) · 流出 \(r.netOutTotalText)")
+        lines.append("合计: ↓ \(r.netInText) ↑ \(r.netOutText)"
+                     + "   开机以来 ↓ \(r.netInTotalText) ↑ \(r.netOutTotalText)")
         return lines.joined(separator: "\n")
     }
 

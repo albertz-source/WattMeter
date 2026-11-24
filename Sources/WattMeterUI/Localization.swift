@@ -230,6 +230,8 @@ extension Localization {
         "磁盘读写": "Disk I/O",
         "内存 / 网络": "Memory / network",
         "内存": "RAM",
+        "合计": "total",
+        "以太网": "Ethernet",
         "连接": "link",
         "开机以来": "Since boot",
         "交换": "swap",

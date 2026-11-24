@@ -97,6 +97,9 @@ public struct PowerReading: Identifiable, Sendable {
     public let swapUsedBytes: Double?
     public let swapTotalBytes: Double?
 
+    // 网络：逐个接口 + 合计
+    public let networkInterfaces: [NetworkInterface]
+
     // 网络：速率（每秒增量）与开机以来累计量
     public let netInBytesPerSec: Double?
     public let netOutBytesPerSec: Double?
@@ -217,6 +220,11 @@ public struct PowerReading: Identifiable, Sendable {
     // MARK: - 网络
 
     public var hasNetwork: Bool { netInBytesTotal != nil || netOutBytesTotal != nil }
+
+    /// 已连接的网络接口（可能同时有以太网 + Wi-Fi）
+    public var activeNetworkInterfaces: [NetworkInterface] {
+        networkInterfaces
+    }
 
     public var netInText: String { ByteFormat.rate(netInBytesPerSec) }
     public var netOutText: String { ByteFormat.rate(netOutBytesPerSec) }
@@ -381,6 +389,7 @@ public struct PowerReading: Identifiable, Sendable {
         memoryCompressedBytes: Double? = nil,
         swapUsedBytes: Double? = nil,
         swapTotalBytes: Double? = nil,
+        networkInterfaces: [NetworkInterface] = [],
         netInBytesPerSec: Double? = nil,
         netOutBytesPerSec: Double? = nil,
         netInBytesTotal: Double? = nil,
@@ -456,6 +465,7 @@ public struct PowerReading: Identifiable, Sendable {
         self.memoryCompressedBytes = memoryCompressedBytes
         self.swapUsedBytes = swapUsedBytes
         self.swapTotalBytes = swapTotalBytes
+        self.networkInterfaces = networkInterfaces
         self.netInBytesPerSec = netInBytesPerSec
         self.netOutBytesPerSec = netOutBytesPerSec
         self.netInBytesTotal = netInBytesTotal
@@ -486,6 +496,31 @@ public struct PowerReading: Identifiable, Sendable {
         self.batteryHealthLabel = batteryHealthLabel
         self.batteryHealthCondition = batteryHealthCondition
         self.source = source
+    }
+}
+
+/// 单个网络接口（en0 / en1 …）的速率与累计流量
+public struct NetworkInterface: Identifiable, Hashable {
+    public let name: String
+    public let isWiFi: Bool
+    public let isUp: Bool
+    public let linkBps: Double?
+    public let inBytesTotal: Double
+    public let outBytesTotal: Double
+    public let inBytesPerSec: Double?
+    public let outBytesPerSec: Double?
+
+    public var id: String { name }
+
+    public var linkText: String { ByteFormat.linkSpeed(linkBps) }
+    public var inText: String { ByteFormat.rate(inBytesPerSec) }
+    public var outText: String { ByteFormat.rate(outBytesPerSec) }
+    public var inTotalText: String { ByteFormat.size(inBytesTotal) }
+    public var outTotalText: String { ByteFormat.size(outBytesTotal) }
+
+    /// Wi-Fi / 以太网（图标名）
+    public var icon: String {
+        isWiFi ? "wifi" : "cable.connector"
     }
 }
 

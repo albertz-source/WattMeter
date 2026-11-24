@@ -15,6 +15,9 @@
 
 #include <stdint.h>
 
+/* 最多跟踪的网络接口数（en0 / en1 …） */
+#define SP_MAX_NET_IFACES 8
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -90,11 +93,20 @@ typedef struct SPReading {
 
     /* ---- 网络（sysctl NET_RT_IFLIST2，累计字节数） ---- */
     int32_t networkAvailable;
-    int32_t netInterfaceCount;    // 参与统计的 en* 接口数
-    double  netInBytes;           // 开机以来累计流入
-    double  netOutBytes;          // 开机以来累计流出
-    double  netLinkBps;           // 连接速率（bit/s），0 表示未知
+    int32_t netInterfaceCount;    // 参与统计的 en* 接口数（已连上 / 有流量）
+    double  netInBytes;           // 所有接口合计：开机以来累计流入
+    double  netOutBytes;          // 所有接口合计：开机以来累计流出
+    double  netLinkBps;           // 主用接口的连接速率（bit/s），0 表示未知
     char    netPrimaryName[16];   // 主用接口名（en0 / en1 …）
+
+    /* ---- 每个网络接口的明细（按接口序号排列） ---- */
+    int32_t netDetailCount;                          // 实际写入的条数（≤ SP_MAX_NET_IFACES）
+    char    netNames[SP_MAX_NET_IFACES][16];
+    int32_t netIsWiFi[SP_MAX_NET_IFACES];
+    int32_t netIsUp[SP_MAX_NET_IFACES];
+    double  netInBytesPerInterface[SP_MAX_NET_IFACES];
+    double  netOutBytesPerInterface[SP_MAX_NET_IFACES];
+    double  netLinkBpsPerInterface[SP_MAX_NET_IFACES];
 
     /* ---- SSD SMART（NVMe log page 0x02，用户态可读，不需要 root） ---- */
     int32_t ssdSmartAvailable;
