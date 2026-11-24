@@ -517,28 +517,91 @@ public struct DiskChip: View {
     }
 }
 
-/// 面板里的磁盘条：读 / 写速率 + 可用空间
+/// 磁盘条：读 / 写速率 + 可用空间，以及 SSD SMART 的累计读写与健康度。
+/// - compact：面板用，SSD 一行小字
+/// - detailed：主窗口用，SSD 用独立徽章展示
 public struct DiskStrip: View {
-    let reading: PowerReading?
+    public enum Style {
+        case compact, detailed
+    }
 
-    public init(reading: PowerReading?) {
+    let reading: PowerReading?
+    let style: Style
+
+    public init(reading: PowerReading?, style: Style = .compact) {
         self.reading = reading
+        self.style = style
     }
 
     public var body: some View {
-        if let r = reading, r.diskFreeBytes != nil || r.hasDiskActivity {
-            HStack(spacing: 6) {
-                DiskChip(kind: .read, label: L("读"), value: r.diskReadText)
-                DiskChip(kind: .write, label: L("写"), value: r.diskWriteText)
-                if let used = r.diskUsedShare {
-                    DiskChip(kind: .capacity,
-                             label: L("可用"),
-                             value: r.diskFreeText,
-                             detail: L("已用") + " " + String(format: "%.0f%%", used * 100))
+        if let r = reading, r.diskFreeBytes != nil || r.hasDiskActivity || r.hasSSDSmart {
+            VStack(alignment: .leading, spacing: 4) {
+                if r.diskFreeBytes != nil || r.hasDiskActivity {
+                    HStack(spacing: 6) {
+                        DiskChip(kind: .read, label: L("读"), value: r.diskReadText)
+                        DiskChip(kind: .write, label: L("写"), value: r.diskWriteText)
+                        if let used = r.diskUsedShare {
+                            DiskChip(kind: .capacity,
+                                     label: L("可用"),
+                                     value: r.diskFreeText,
+                                     detail: L("已用") + " " + String(format: "%.0f%%", used * 100))
+                        }
+                        Spacer(minLength: 0)
+                    }
                 }
-                Spacer(minLength: 0)
+                if r.hasSSDSmart {
+                    switch style {
+                    case .compact: ssdLine(r)
+                    case .detailed: ssdChips(r)
+                    }
+                }
             }
         }
+    }
+
+    /// SSD SMART 徽章行（主窗口）
+    @ViewBuilder
+    private func ssdChips(_ r: PowerReading) -> some View {
+        HStack(spacing: 6) {
+            DiskChip(kind: .write, label: L("累计写入"), value: r.ssdWriteTotalText)
+            DiskChip(kind: .read, label: L("累计读取"), value: r.ssdReadTotalText)
+            DiskChip(kind: .capacity, label: L("健康度"), value: r.ssdHealthText)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// SSD SMART：累计写入 / 读取 + 健康度
+    @ViewBuilder
+    private func ssdLine(_ r: PowerReading) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "internaldrive.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(Palette.blue.opacity(0.9))
+            Text("SSD")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
+            Text(L("累计写入") + " " + r.ssdWriteTotalText)
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.6))
+            Text("·").foregroundStyle(.white.opacity(0.25))
+            Text(L("累计读取") + " " + r.ssdReadTotalText)
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.6))
+            Text("·").foregroundStyle(.white.opacity(0.25))
+            Text(L("健康度") + " " + r.ssdHealthText)
+                .font(.system(size: 9, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(healthTint(r))
+            Spacer(minLength: 0)
+        }
+        .lineLimit(1)
+    }
+
+    private func healthTint(_ r: PowerReading) -> Color {
+        guard let health = r.ssdHealthPercent else { return .white.opacity(0.5) }
+        if health >= 80 { return Palette.mint }
+        if health >= 60 { return Palette.amber }
+        return Color(red: 0.96, green: 0.45, blue: 0.38)
     }
 }
 

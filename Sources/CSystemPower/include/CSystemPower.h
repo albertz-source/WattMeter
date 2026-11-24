@@ -77,6 +77,20 @@ typedef struct SPReading {
     double  anePowerW;
     double  dramPowerW;
 
+    /* ---- SSD SMART（NVMe log page 0x02，用户态可读，不需要 root） ---- */
+    int32_t ssdSmartAvailable;
+    char    ssdModel[64];          // Model Number
+    double  ssdPercentUsed;        // 寿命已用百分比
+    double  ssdAvailableSpare;     // 可用备用块百分比
+    double  ssdSpareThreshold;     // 备用块告警阈值
+    double  ssdNvmeTempC;          // NVMe 上报温度
+    double  ssdReadBytes;          // 累计读取字节数（Data Units Read × 512000）
+    double  ssdWriteBytes;         // 累计写入字节数
+    double  ssdPowerOnHours;
+    double  ssdPowerCycles;
+    double  ssdUnsafeShutdowns;
+    int32_t ssdCriticalWarning;    // critical warning 位图
+
     /* ---- 磁盘 I/O（IOBlockStorageDriver.Statistics，累计字节数） ---- */
     int32_t diskAvailable;
     int32_t diskCount;       /* 参与统计的物理磁盘数量 */

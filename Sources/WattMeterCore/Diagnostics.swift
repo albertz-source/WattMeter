@@ -49,6 +49,28 @@ public enum Diagnostics {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - SSD SMART
+
+    public static func ssd() -> String {
+        let reader = PowerReader()
+        guard let r = reader.read() else { return "读取失败：没有可用数据" }
+        var lines: [String] = ["== SSD SMART（NVMe log page 0x02，无需 root） =="]
+        guard r.hasSSDSmart else {
+            lines.append("读不到 NVMe SMART —— 可能不是 NVMe 内置盘（SATA / 外接盘），或系统不允许加载 NVMeSMARTLib。")
+            return lines.joined(separator: "\n")
+        }
+        lines.append("型号: \(r.ssdModel ?? "—")")
+        lines.append("健康度: \(r.ssdHealthText)（寿命已用 \(r.ssdPercentUsed.map { String(format: "%.0f%%", $0) } ?? "—")）")
+        lines.append("出厂以来总读取: \(r.ssdReadTotalText)   总写入: \(r.ssdWriteTotalText)")
+        lines.append("可用备用: \(r.ssdSpareText)"
+                     + (r.ssdSpareThreshold.map { String(format: "（阈值 %.0f%%）", $0) } ?? "")
+                     + "   温度: \(r.ssdNvmeTempC.map { String(format: "%.0f°C", $0) } ?? "—")")
+        lines.append("通电: \(r.ssdPowerOnHoursText) 小时"
+                     + " · 上电 \(r.ssdPowerCycles.map(String.init) ?? "—") 次"
+                     + " · 异常断电 \(r.ssdUnsafeShutdowns.map(String.init) ?? "—") 次")
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - 电池原始键
 
     public static func batteryKeys() -> String {
@@ -123,6 +145,10 @@ public enum Diagnostics {
         lines.append("芯片: CPU \(f(r.cpuPowerW)) W   GPU \(f(r.gpuPowerW)) W   "
                      + "ANE \(f(r.anePowerW)) W   DRAM \(f(r.dramPowerW)) W")
         lines.append("风扇: \(r.fanText) RPM（\(r.fanCount ?? 0) 个）")
+        if r.hasSSDSmart {
+            lines.append("SSD: \(r.ssdModel ?? "—")   健康度 \(r.ssdHealthText)"
+                         + "   累计写入 \(r.ssdWriteTotalText) / 读取 \(r.ssdReadTotalText)")
+        }
 
         // 电池容量 / 健康度 / 循环次数
         lines.append("容量: 满充 \(f(r.batteryFullChargeCapacityMAh, 0)) mAh / 设计 \(f(r.batteryDesignCapacityMAh, 0)) mAh   "

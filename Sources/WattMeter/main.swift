@@ -15,6 +15,10 @@ if CommandLine.arguments.contains("--battery") {
     print(Diagnostics.battery())
     exit(0)
 }
+if CommandLine.arguments.contains("--ssd") {
+    print(Diagnostics.ssd())
+    exit(0)
+}
 if CommandLine.arguments.contains("--disk") {
     print(Diagnostics.disk())
     exit(0)

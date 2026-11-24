@@ -73,8 +73,7 @@ public struct MainWindowView: View {
                     }
 
                     Card(title: L("磁盘读写")) {
-                        DiskStrip(reading: store.latest)
-                            .frame(height: 22)
+                        DiskStrip(reading: store.latest, style: .detailed)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -227,6 +226,11 @@ public struct MainWindowView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    // MARK: - SSD SMART 副标题
+
+
+
 
     /// 电池健康行副标题：满充 / 设计容量 · 循环次数
     private var healthCaption: String {

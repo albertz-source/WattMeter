@@ -88,6 +88,18 @@ public struct PowerReading: Identifiable, Sendable {
     public let fanMaxRPM: Double?
     public let fanTargetRPM: Double?
 
+    // SSD SMART（NVMe）：寿命、累计读写量、健康度
+    public let ssdModel: String?
+    public let ssdPercentUsed: Double?        // 寿命已用百分比
+    public let ssdAvailableSpare: Double?     // 可用备用块百分比
+    public let ssdSpareThreshold: Double?
+    public let ssdReadBytesTotal: Double?     // 出厂以来累计读取
+    public let ssdWriteBytesTotal: Double?    // 出厂以来累计写入
+    public let ssdPowerOnHours: Double?
+    public let ssdPowerCycles: Int?
+    public let ssdUnsafeShutdowns: Int?
+    public let ssdNvmeTempC: Double?
+
     // 磁盘 I/O（IOBlockStorageDriver 累计字节数的每秒增量）与容量
     public let diskCount: Int?
     public let diskReadBytesPerSec: Double?
@@ -158,6 +170,36 @@ public struct PowerReading: Identifiable, Sendable {
     public var fanStopped: Bool {
         guard let fanRPM else { return false }
         return fanRPM < 1 && (fanMinRPM ?? 0) > 0
+    }
+
+    /// SSD SMART 是否有数据
+    public var hasSSDSmart: Bool { ssdPercentUsed != nil || ssdReadBytesTotal != nil }
+
+    /// SSD 健康度 = 100% - 寿命已用
+    public var ssdHealthPercent: Double? {
+        guard let used = ssdPercentUsed else { return nil }
+        return max(0, min(100, 100 - used))
+    }
+
+    public var ssdHealthText: String {
+        guard let health = ssdHealthPercent else { return "—" }
+        return String(format: "%.0f%%", health)
+    }
+
+    /// 出厂以来累计读取 / 写入
+    public var ssdReadTotalText: String { ByteFormat.size(ssdReadBytesTotal) }
+    public var ssdWriteTotalText: String { ByteFormat.size(ssdWriteBytesTotal) }
+
+    /// 可用备用块文案
+    public var ssdSpareText: String {
+        guard let spare = ssdAvailableSpare else { return "—" }
+        return String(format: "%.0f%%", spare)
+    }
+
+    /// 通电小时数（数字，单位由界面补）
+    public var ssdPowerOnHoursText: String {
+        guard let hours = ssdPowerOnHours, hours >= 0 else { return "—" }
+        return String(format: "%.0f", hours)
     }
 
     /// 磁盘是否有读数
@@ -278,6 +320,16 @@ public struct PowerReading: Identifiable, Sendable {
         fanMinRPM: Double? = nil,
         fanMaxRPM: Double? = nil,
         fanTargetRPM: Double? = nil,
+        ssdModel: String? = nil,
+        ssdPercentUsed: Double? = nil,
+        ssdAvailableSpare: Double? = nil,
+        ssdSpareThreshold: Double? = nil,
+        ssdReadBytesTotal: Double? = nil,
+        ssdWriteBytesTotal: Double? = nil,
+        ssdPowerOnHours: Double? = nil,
+        ssdPowerCycles: Int? = nil,
+        ssdUnsafeShutdowns: Int? = nil,
+        ssdNvmeTempC: Double? = nil,
         diskCount: Int? = nil,
         diskReadBytesPerSec: Double? = nil,
         diskWriteBytesPerSec: Double? = nil,
@@ -330,6 +382,16 @@ public struct PowerReading: Identifiable, Sendable {
         self.fanTargetRPM = fanTargetRPM
         self.fanMinRPM = fanMinRPM
         self.fanMaxRPM = fanMaxRPM
+        self.ssdModel = ssdModel
+        self.ssdPercentUsed = ssdPercentUsed
+        self.ssdAvailableSpare = ssdAvailableSpare
+        self.ssdSpareThreshold = ssdSpareThreshold
+        self.ssdReadBytesTotal = ssdReadBytesTotal
+        self.ssdWriteBytesTotal = ssdWriteBytesTotal
+        self.ssdPowerOnHours = ssdPowerOnHours
+        self.ssdPowerCycles = ssdPowerCycles
+        self.ssdUnsafeShutdowns = ssdUnsafeShutdowns
+        self.ssdNvmeTempC = ssdNvmeTempC
         self.diskCount = diskCount
         self.diskReadBytesPerSec = diskReadBytesPerSec
         self.diskWriteBytesPerSec = diskWriteBytesPerSec

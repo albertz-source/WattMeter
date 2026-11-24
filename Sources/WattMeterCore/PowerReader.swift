@@ -261,6 +261,18 @@ public final class PowerReader {
             fanMinRPM: fanMin,
             fanMaxRPM: fanMax,
             fanTargetRPM: fanTarget,
+            ssdModel: raw.ssdSmartAvailable != 0 && !raw.ssdModelString.isEmpty ? raw.ssdModelString : nil,
+            ssdPercentUsed: raw.ssdSmartAvailable != 0 ? raw.ssdPercentUsed : nil,
+            ssdAvailableSpare: raw.ssdSmartAvailable != 0 ? raw.ssdAvailableSpare : nil,
+            ssdSpareThreshold: raw.ssdSmartAvailable != 0 ? raw.ssdSpareThreshold : nil,
+            ssdReadBytesTotal: raw.ssdSmartAvailable != 0 && raw.ssdReadBytes > 0 ? raw.ssdReadBytes : nil,
+            ssdWriteBytesTotal: raw.ssdSmartAvailable != 0 && raw.ssdWriteBytes > 0 ? raw.ssdWriteBytes : nil,
+            ssdPowerOnHours: raw.ssdSmartAvailable != 0 && raw.ssdPowerOnHours > 0 ? raw.ssdPowerOnHours : nil,
+            ssdPowerCycles: raw.ssdSmartAvailable != 0 && raw.ssdPowerCycles > 0
+                ? Int(raw.ssdPowerCycles) : nil,
+            ssdUnsafeShutdowns: raw.ssdSmartAvailable != 0 ? Int(raw.ssdUnsafeShutdowns) : nil,
+            ssdNvmeTempC: raw.ssdSmartAvailable != 0 && raw.ssdNvmeTempC > -20 && raw.ssdNvmeTempC < 120
+                ? raw.ssdNvmeTempC : nil,
             diskCount: raw.diskAvailable != 0 ? Int(raw.diskCount) : nil,
             diskReadBytesPerSec: diskReadRate,
             diskWriteBytesPerSec: diskWriteRate,
@@ -432,6 +444,13 @@ private extension SPReading {
     /// 读取 C 结构里的定长字符串
     var adapterNameString: String {
         withUnsafeBytes(of: adapterName) { buffer in
+            guard let base = buffer.baseAddress else { return "" }
+            return String(cString: base.assumingMemoryBound(to: CChar.self))
+        }
+    }
+
+    var ssdModelString: String {
+        withUnsafeBytes(of: ssdModel) { buffer in
             guard let base = buffer.baseAddress else { return "" }
             return String(cString: base.assumingMemoryBound(to: CChar.self))
         }

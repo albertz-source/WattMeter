@@ -209,6 +209,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tip += " · " + L("写") + " " + reading.diskWriteText
             tip += " · " + L("可用") + " " + reading.diskFreeText
         }
+        if reading.hasSSDSmart {
+            tip += "\nSSD " + L("累计写入") + " " + reading.ssdWriteTotalText
+            tip += " · " + L("累计读取") + " " + reading.ssdReadTotalText
+            tip += " · " + L("健康度") + " " + reading.ssdHealthText
+        }
         tip += "\n" + L("右键可切换菜单栏数值")
         button.toolTip = tip
 
@@ -380,14 +385,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onQuit: { NSApp.terminate(nil) }
         )
         let controller = NSHostingController(rootView: root)
-        // 面板实测高度 749pt（含电池健康行与磁盘条），留 1pt 余量避免底部被裁
-        controller.preferredContentSize = NSSize(width: 400, height: 750)
+        // 面板实测高度 769pt（含电池健康行、磁盘条与 SSD SMART 行），留 1pt 余量
+        controller.preferredContentSize = NSSize(width: 400, height: 770)
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentSize = NSSize(width: 400, height: 750)
+        popover.contentSize = NSSize(width: 400, height: 770)
         popover.contentViewController = controller
         self.popover = popover
     }
@@ -417,10 +422,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let window = NSWindow(contentViewController: controller)
             window.title = "WattMeter"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            // 内容实测高度约 866pt（侧栏多了一行电池健康）；按真实内容开窗，
+            // 内容实测高度约 886pt（电池健康行 + 磁盘 / SSD 卡片）；按真实内容开窗，
             // 避免底部被裁掉。
             // 用户手动缩小时由 MainWindowView 的 ScrollView 兜底。
-            window.setContentSize(NSSize(width: 1020, height: 880))
+            window.setContentSize(NSSize(width: 1020, height: 892))
             window.minSize = NSSize(width: 960, height: 600)
             window.isReleasedWhenClosed = false
             window.tabbingMode = .disallowed

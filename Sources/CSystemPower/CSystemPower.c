@@ -9,6 +9,9 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
+#include <IOKit/IOCFPlugIn.h>
+#include <IOKit/IOBSD.h>
+#include <sys/mount.h>
 #include <IOKit/ps/IOPowerSources.h>
 #include <IOKit/ps/IOPSKeys.h>
 #include <mach/mach.h>
@@ -114,6 +117,12 @@ struct SPReader {
     char fanMaxKeys[4][5];     /* F?Mx */
     int  fanMaxCount;
     SPIOReport io;
+    /* NVMe SMART 插件接口（懒加载；失败后不再重试） */
+    void *nvmeSmartInterface;
+    void *nvmePluginInterface;
+    int   nvmeSmartTried;
+    int   nvmeSmartReady;
+    char  nvmeModel[64];
 };
 
 static kern_return_t smc_call(io_connect_t conn, SMCKeyData *in, SMCKeyData *out) {
@@ -422,6 +431,193 @@ static void cf_string(CFDictionaryRef d, CFStringRef k, char *buf, size_t len) {
     if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
         CFStringGetCString((CFStringRef)v, buf, (CFIndex)len, kCFStringEncodingUTF8);
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* SSD SMART：NVMe log page 0x02                                        */
+/*                                                                     */
+/* 走 CFPlugIn 私有接口（/System/Library/Extensions/NVMeSMARTLib.plugin）， */
+/* 和 smartctl 同一条路径，用户态即可读取，不需要 root。                    */
+/* ------------------------------------------------------------------ */
+
+typedef struct IONVMeSMARTInterface {
+    void *_reserved;
+    HRESULT (*QueryInterface)(void *thisPointer, REFIID iid, LPVOID *ppv);
+    ULONG (*AddRef)(void *thisPointer);
+    ULONG (*Release)(void *thisPointer);
+    unsigned short version;
+    unsigned short revision;
+    IOReturn (*SMARTReadData)(void *interface, void *data);
+    IOReturn (*GetIdentifyData)(void *interface, void *id, unsigned int ns);
+    unsigned long long reserved0;
+    unsigned long long reserved1;
+    IOReturn (*GetLogPage)(void *interface, void *data, unsigned int logPageId, unsigned int numDWords);
+} IONVMeSMARTInterface;
+
+static CFUUIDRef nvme_smart_type_id(void) {
+    return CFUUIDGetConstantUUIDWithBytes(NULL,
+        0xAA, 0x0F, 0xA6, 0xF9, 0xC2, 0xD6, 0x45, 0x7F,
+        0xB1, 0x0B, 0x59, 0xA1, 0x32, 0x53, 0x29, 0x2F);
+}
+
+static CFUUIDRef nvme_smart_interface_id(void) {
+    return CFUUIDGetConstantUUIDWithBytes(NULL,
+        0xcc, 0xd1, 0xdb, 0x19, 0xfd, 0x9a, 0x4d, 0xaf,
+        0xbf, 0x95, 0x12, 0x45, 0x4b, 0x23, 0x0a, 0xb6);
+}
+
+/* 128 位小端整数（NVMe 计数器的低 64 位足够） */
+static unsigned long long nvme_le128(const unsigned char *p) {
+    unsigned long long v = 0;
+    for (int i = 7; i >= 0; i--) v = (v << 8) | p[i];
+    return v;
+}
+
+/* 根卷所在的物理盘 BSD 名（disk0 / disk3 …） */
+static void root_disk_bsd_name(char *out, size_t len) {
+    snprintf(out, len, "disk0");
+    struct statfs fs;
+    if (statfs("/", &fs) != 0) return;
+    const char *p = strstr(fs.f_mntfromname, "disk");
+    if (!p) return;
+    size_t i = 0;
+    while (p[i] && i + 1 < len && (p[i] != 's' || i == 0)) {
+        out[i] = p[i];
+        i++;
+    }
+    out[i] = '\0';
+    if (i < 5) snprintf(out, len, "disk0");
+}
+
+static int entry_has_nvme_smart(io_registry_entry_t svc) {
+    CFTypeRef v = IORegistryEntryCreateCFProperty(svc, CFSTR("NVMe SMART Capable"),
+                                                  kCFAllocatorDefault, 0);
+    int ok = v != NULL;
+    if (v) CFRelease(v);
+    return ok;
+}
+
+/* 从根卷 IOMedia 向上找到带 "NVMe SMART Capable" 的节点 */
+static io_service_t find_nvme_smart_service(void) {
+    char bsd[32];
+    root_disk_bsd_name(bsd, sizeof bsd);
+
+    CFMutableDictionaryRef matcher = IOBSDNameMatching(kIOMainPortDefault, 0, bsd);
+    io_service_t svc = IOServiceGetMatchingService(kIOMainPortDefault, matcher);
+    if (!svc && strcmp(bsd, "disk0") != 0) {
+        matcher = IOBSDNameMatching(kIOMainPortDefault, 0, "disk0");
+        svc = IOServiceGetMatchingService(kIOMainPortDefault, matcher);
+    }
+    if (!svc) return 0;
+
+    while (svc) {
+        if (entry_has_nvme_smart(svc)) return svc;
+        io_service_t parent = 0;
+        if (IORegistryEntryGetParentEntry(svc, kIOServicePlane, &parent) != KERN_SUCCESS) {
+            IOObjectRelease(svc);
+            return 0;
+        }
+        IOObjectRelease(svc);
+        svc = parent;
+    }
+    return 0;
+}
+
+static int nvme_smart_open(SPReader *reader) {
+    if (reader->nvmeSmartTried) return reader->nvmeSmartReady;
+    reader->nvmeSmartTried = 1;
+
+    io_service_t svc = find_nvme_smart_service();
+    if (!svc) return 0;
+
+    /* 机型名（诊断用）：属性通常在控制器节点上，向上找几层 */
+    {
+        io_registry_entry_t node = svc;
+        IOObjectRetain(node);
+        for (int depth = 0; depth < 6 && node; depth++) {
+            CFTypeRef model = IORegistryEntryCreateCFProperty(node, CFSTR("Model Number"),
+                                                             kCFAllocatorDefault, 0);
+            if (model) {
+                if (CFGetTypeID(model) == CFStringGetTypeID()) {
+                    CFStringGetCString((CFStringRef)model, reader->nvmeModel,
+                                       sizeof reader->nvmeModel, kCFStringEncodingUTF8);
+                }
+                CFRelease(model);
+                break;
+            }
+            io_registry_entry_t parent = 0;
+            if (IORegistryEntryGetParentEntry(node, kIOServicePlane, &parent) != KERN_SUCCESS) {
+                break;
+            }
+            IOObjectRelease(node);
+            node = parent;
+        }
+        if (node) IOObjectRelease(node);
+    }
+
+    IOCFPlugInInterface **plugin = NULL;
+    SInt32 score = 0;
+    if (IOCreatePlugInInterfaceForService(svc, nvme_smart_type_id(), kIOCFPlugInInterfaceID,
+                                          &plugin, &score) != kIOReturnSuccess || !plugin) {
+        IOObjectRelease(svc);
+        return 0;
+    }
+    IOObjectRelease(svc);
+
+    IONVMeSMARTInterface **iface = NULL;
+    if ((*plugin)->QueryInterface(plugin, CFUUIDGetUUIDBytes(nvme_smart_interface_id()),
+                                  (LPVOID *)&iface) != S_OK || !iface) {
+        IODestroyPlugInInterface(plugin);
+        return 0;
+    }
+
+    reader->nvmeSmartInterface = iface;
+    reader->nvmePluginInterface = plugin;
+    reader->nvmeSmartReady = 1;
+    return 1;
+}
+
+static void nvme_smart_close(SPReader *reader) {
+    IONVMeSMARTInterface **iface = (IONVMeSMARTInterface **)reader->nvmeSmartInterface;
+    if (iface) {
+        (*iface)->Release(iface);
+        reader->nvmeSmartInterface = NULL;
+    }
+    IOCFPlugInInterface **plugin = (IOCFPlugInInterface **)reader->nvmePluginInterface;
+    if (plugin) {
+        IODestroyPlugInInterface(plugin);
+        reader->nvmePluginInterface = NULL;
+    }
+    reader->nvmeSmartReady = 0;
+}
+
+static void read_nvme_smart(SPReader *reader, SPReading *r) {
+    if (!nvme_smart_open(reader)) return;
+    IONVMeSMARTInterface **iface = (IONVMeSMARTInterface **)reader->nvmeSmartInterface;
+    if (!iface) return;
+
+    unsigned char log[512];
+    memset(log, 0, sizeof log);
+    if ((*iface)->GetLogPage(iface, log, 0x02, 512 / 4 - 1) != kIOReturnSuccess) {
+        nvme_smart_close(reader);
+        return;
+    }
+
+    r->ssdSmartAvailable = 1;
+    snprintf(r->ssdModel, sizeof r->ssdModel, "%s", reader->nvmeModel);
+    r->ssdCriticalWarning = log[0];
+    r->ssdNvmeTempC = (double)((unsigned)log[1] | ((unsigned)log[2] << 8)) - 273.15;
+    r->ssdAvailableSpare = log[3];
+    r->ssdSpareThreshold = log[4];
+    r->ssdPercentUsed = log[5];
+
+    double unitsRead = (double)nvme_le128(log + 32);
+    double unitsWritten = (double)nvme_le128(log + 48);
+    r->ssdReadBytes = unitsRead * 512000.0;    /* 1 unit = 1000 × 512 B */
+    r->ssdWriteBytes = unitsWritten * 512000.0;
+    r->ssdPowerCycles = (double)nvme_le128(log + 112);
+    r->ssdPowerOnHours = (double)nvme_le128(log + 128);
+    r->ssdUnsafeShutdowns = (double)nvme_le128(log + 144);
 }
 
 /* ------------------------------------------------------------------ */
@@ -990,6 +1186,7 @@ SPReader *sp_reader_create(void) {
 void sp_reader_destroy(SPReader *reader) {
     if (!reader) return;
     ioreport_release(reader);
+    nvme_smart_close(reader);
     if (reader->smcReady) {
         IOServiceClose(reader->smcConnection);
         IOObjectRelease(reader->smcService);
@@ -1350,6 +1547,7 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
     /* 平台数据 */
     read_smart_battery(out);
     read_disk_stats(out);
+    read_nvme_smart(reader, out);
     read_iops(out);
 
     return 0;
