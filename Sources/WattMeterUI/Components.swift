@@ -456,6 +456,92 @@ public struct TempChip: View {
     }
 }
 
+// MARK: - 磁盘 I/O
+
+/// 磁盘读写徽章（速率用箭头区分读 / 写）
+public struct DiskChip: View {
+    public enum Kind {
+        case read, write, capacity
+    }
+
+    let kind: Kind
+    let label: String
+    let value: String
+    let detail: String?
+
+    public init(kind: Kind, label: String, value: String, detail: String? = nil) {
+        self.kind = kind
+        self.label = label
+        self.value = value
+        self.detail = detail
+    }
+
+    private var icon: String {
+        switch kind {
+        case .read: return "arrow.down.circle.fill"
+        case .write: return "arrow.up.circle.fill"
+        case .capacity: return "internaldrive"
+        }
+    }
+
+    private var tint: Color {
+        switch kind {
+        case .read: return Palette.mint
+        case .write: return Palette.amber
+        case .capacity: return Palette.blue
+        }
+    }
+
+    public var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+                .foregroundStyle(tint.opacity(0.9))
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.5))
+            Text(value)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.9))
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(tint.opacity(0.10)))
+    }
+}
+
+/// 面板里的磁盘条：读 / 写速率 + 可用空间
+public struct DiskStrip: View {
+    let reading: PowerReading?
+
+    public init(reading: PowerReading?) {
+        self.reading = reading
+    }
+
+    public var body: some View {
+        if let r = reading, r.diskFreeBytes != nil || r.hasDiskActivity {
+            HStack(spacing: 6) {
+                DiskChip(kind: .read, label: L("读"), value: r.diskReadText)
+                DiskChip(kind: .write, label: L("写"), value: r.diskWriteText)
+                if let used = r.diskUsedShare {
+                    DiskChip(kind: .capacity,
+                             label: L("可用"),
+                             value: r.diskFreeText,
+                             detail: L("已用") + " " + String(format: "%.0f%%", used * 100))
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+}
+
 /// 面板里的紧凑温度条：只显示读得到的组件
 public struct TempStrip: View {
     let reading: PowerReading?

@@ -30,6 +30,25 @@ public enum Diagnostics {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - 磁盘
+
+    public static func disk() -> String {
+        let reader = PowerReader()
+        _ = reader.read()                 // 第一次只建立基线
+        usleep(1_000_000)
+        guard let r = reader.read() else { return "读取失败：没有可用数据" }
+        var lines: [String] = ["== 磁盘 I/O 诊断（1 秒窗口） =="]
+        lines.append("磁盘数量: \(r.diskCount.map(String.init) ?? "—")")
+        lines.append("读取: \(r.diskReadText)   写入: \(r.diskWriteText)")
+        lines.append("本次开机累计: 读 \(r.diskReadTotalText)   写 \(r.diskWriteTotalText)")
+        lines.append("启动卷: 可用 \(r.diskFreeText) / 总容量 \(ByteFormat.size(r.diskTotalBytes))"
+                     + (r.diskUsedShare.map { String(format: "   已用 %.0f%%", $0 * 100) } ?? ""))
+        if r.diskReadBytesTotal == nil {
+            lines.append("提示: 读不到 IOBlockStorageDriver.Statistics，可能被系统限制。")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - 电池原始键
 
     public static func batteryKeys() -> String {

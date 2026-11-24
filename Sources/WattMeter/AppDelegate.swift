@@ -204,6 +204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let fan = reading.fanRPM {
             tip += " · " + L("风扇") + " \(String(format: "%.0f RPM", fan))"
         }
+        if reading.hasDiskActivity {
+            tip += "\n" + L("磁盘") + " " + L("读") + " " + reading.diskReadText
+            tip += " · " + L("写") + " " + reading.diskWriteText
+            tip += " · " + L("可用") + " " + reading.diskFreeText
+        }
         tip += "\n" + L("右键可切换菜单栏数值")
         button.toolTip = tip
 
@@ -375,14 +380,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onQuit: { NSApp.terminate(nil) }
         )
         let controller = NSHostingController(rootView: root)
-        // 面板实测高度 719pt（含电池健康行），留 1pt 余量避免底部被裁
-        controller.preferredContentSize = NSSize(width: 400, height: 720)
+        // 面板实测高度 749pt（含电池健康行与磁盘条），留 1pt 余量避免底部被裁
+        controller.preferredContentSize = NSSize(width: 400, height: 750)
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentSize = NSSize(width: 400, height: 720)
+        popover.contentSize = NSSize(width: 400, height: 750)
         popover.contentViewController = controller
         self.popover = popover
     }

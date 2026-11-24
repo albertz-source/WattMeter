@@ -71,6 +71,11 @@ public struct MainWindowView: View {
                     Card(title: L("整机功耗 / 电池净功率")) {
                         PowerLineChart(readings: samples, height: 116)
                     }
+
+                    Card(title: L("磁盘读写")) {
+                        DiskStrip(reading: store.latest)
+                            .frame(height: 22)
+                    }
                 }
                 .frame(maxWidth: .infinity)
 

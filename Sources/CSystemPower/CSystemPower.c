@@ -425,6 +425,65 @@ static void cf_string(CFDictionaryRef d, CFStringRef k, char *buf, size_t len) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 磁盘 I/O：IOBlockStorageDriver.Statistics（累计字节数）               */
+/* ------------------------------------------------------------------ */
+
+static void read_disk_stats(SPReading *r) {
+    io_iterator_t iter = 0;
+    if (IOServiceGetMatchingServices(kIOMainPortDefault,
+                                     IOServiceMatching("IOBlockStorageDriver"), &iter) != KERN_SUCCESS) {
+        return;
+    }
+
+    int count = 0;
+    double readBytes = 0, writeBytes = 0, readOps = 0, writeOps = 0;
+    io_service_t svc = 0;
+    while ((svc = IOIteratorNext(iter))) {
+        /* 排除磁盘映像（挂载 DMG 会产生一个虚拟磁盘），只统计真实磁盘 */
+        int isImage = 0;
+        io_registry_entry_t parent = 0;
+        if (IORegistryEntryGetParentEntry(svc, kIOServicePlane, &parent) == KERN_SUCCESS) {
+            CFTypeRef chars = IORegistryEntryCreateCFProperty(parent, CFSTR("Device Characteristics"),
+                                                             kCFAllocatorDefault, 0);
+            if (chars && CFGetTypeID(chars) == CFDictionaryGetTypeID()) {
+                char product[128] = {0};
+                cf_string((CFDictionaryRef)chars, CFSTR("Product Name"), product, sizeof product);
+                if (strstr(product, "Disk Image") != NULL || strstr(product, "DiskImage") != NULL) {
+                    isImage = 1;
+                }
+            }
+            if (chars) CFRelease(chars);
+            IOObjectRelease(parent);
+        }
+
+        if (!isImage) {
+            CFTypeRef stats = IORegistryEntryCreateCFProperty(svc, CFSTR("Statistics"),
+                                                             kCFAllocatorDefault, 0);
+            if (stats && CFGetTypeID(stats) == CFDictionaryGetTypeID()) {
+                CFDictionaryRef d = (CFDictionaryRef)stats;
+                readBytes  += cf_double(d, CFSTR("Bytes (Read)"), 0.0);
+                writeBytes += cf_double(d, CFSTR("Bytes (Write)"), 0.0);
+                readOps    += cf_double(d, CFSTR("Operations (Read)"), 0.0);
+                writeOps   += cf_double(d, CFSTR("Operations (Write)"), 0.0);
+                count++;
+            }
+            if (stats) CFRelease(stats);
+        }
+        IOObjectRelease(svc);
+    }
+    IOObjectRelease(iter);
+
+    if (count > 0) {
+        r->diskAvailable = 1;
+        r->diskCount = count;
+        r->diskReadBytes = readBytes;
+        r->diskWriteBytes = writeBytes;
+        r->diskReadOps = readOps;
+        r->diskWriteOps = writeOps;
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* AppleSmartBattery (IORegistry)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -1290,6 +1349,7 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
 
     /* 平台数据 */
     read_smart_battery(out);
+    read_disk_stats(out);
     read_iops(out);
 
     return 0;

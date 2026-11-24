@@ -10,6 +10,11 @@ import CSystemPower
 public final class PowerReader {
     private let handle: OpaquePointer?
 
+    /// 磁盘计数器上一次的采样值（用来把累计字节数变成 MB/s）
+    private var lastDiskSample: (read: Double, write: Double, at: Date)?
+    /// 启动卷容量缓存（statfs 不必每秒都做）
+    private var cachedVolume: (free: Double?, total: Double?, at: Date)?
+
     public init() {
         handle = sp_reader_create()
     }
@@ -186,6 +191,39 @@ public final class PowerReader {
         let fanMin: Double? = raw.fanAvailable != 0 && raw.fanMinRPM > 0 ? raw.fanMinRPM : nil
         let fanMax: Double? = raw.fanAvailable != 0 && raw.fanMaxRPM > 0 ? raw.fanMaxRPM : nil
 
+        // ── 磁盘 I/O：累计字节数 → 每秒速率 ──────────────────────────
+        let now = Date()
+        var diskReadRate: Double?
+        var diskWriteRate: Double?
+        if raw.diskAvailable != 0 {
+            if let last = lastDiskSample {
+                let elapsed = now.timeIntervalSince(last.at)
+                if elapsed > 0.2, elapsed < 10 {
+                    // 计数器可能因磁盘插拔归零，负增量按 0 处理
+                    diskReadRate = max(0, raw.diskReadBytes - last.read) / elapsed
+                    diskWriteRate = max(0, raw.diskWriteBytes - last.write) / elapsed
+                }
+            }
+            lastDiskSample = (raw.diskReadBytes, raw.diskWriteBytes, now)
+        } else {
+            lastDiskSample = nil
+        }
+        let diskReadTotal: Double? = raw.diskAvailable != 0 ? raw.diskReadBytes : nil
+        let diskWriteTotal: Double? = raw.diskAvailable != 0 ? raw.diskWriteBytes : nil
+
+        // 启动卷容量（5 秒缓存）
+        var volumeFree: Double?
+        var volumeTotal: Double?
+        if let cached = cachedVolume, now.timeIntervalSince(cached.at) < 5 {
+            volumeFree = cached.free
+            volumeTotal = cached.total
+        } else {
+            let values = Self.volumeCapacity()
+            volumeFree = values.free
+            volumeTotal = values.total
+            cachedVolume = (values.free, values.total, now)
+        }
+
         return PowerReading(
             systemPowerW: systemW,
             adapterInputW: adapterInW,
@@ -223,6 +261,13 @@ public final class PowerReader {
             fanMinRPM: fanMin,
             fanMaxRPM: fanMax,
             fanTargetRPM: fanTarget,
+            diskCount: raw.diskAvailable != 0 ? Int(raw.diskCount) : nil,
+            diskReadBytesPerSec: diskReadRate,
+            diskWriteBytesPerSec: diskWriteRate,
+            diskReadBytesTotal: diskReadTotal,
+            diskWriteBytesTotal: diskWriteTotal,
+            diskFreeBytes: volumeFree,
+            diskTotalBytes: volumeTotal,
             // 台式机的 IORegistry 里也会有一个空的 AppleSmartBattery 节点
             //（容量 / 循环次数都是 0），只有真正装了电池才展示这些字段。
             batteryDesignCapacityMAh: hasBattery && raw.batteryCapacityAvailable != 0
@@ -237,6 +282,20 @@ public final class PowerReader {
                 ? raw.batteryHealthConditionString : nil,
             source: dataSource
         )
+    }
+
+    /// 启动卷可用 / 总容量（字节）
+    private static func volumeCapacity() -> (free: Double?, total: Double?) {
+        let url = URL(fileURLWithPath: "/")
+        guard let values = try? url.resourceValues(forKeys: [
+            .volumeTotalCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey,
+        ]) else {
+            return (nil, nil)
+        }
+        let total = values.volumeTotalCapacity.map(Double.init)
+        let free = values.volumeAvailableCapacityForImportantUsage.map(Double.init)
+        return (free, total)
     }
 
     /// 供电源分流结果。

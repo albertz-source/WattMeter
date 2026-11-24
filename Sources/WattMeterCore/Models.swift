@@ -88,6 +88,15 @@ public struct PowerReading: Identifiable, Sendable {
     public let fanMaxRPM: Double?
     public let fanTargetRPM: Double?
 
+    // 磁盘 I/O（IOBlockStorageDriver 累计字节数的每秒增量）与容量
+    public let diskCount: Int?
+    public let diskReadBytesPerSec: Double?
+    public let diskWriteBytesPerSec: Double?
+    public let diskReadBytesTotal: Double?    // 开机以来累计
+    public let diskWriteBytesTotal: Double?
+    public let diskFreeBytes: Double?         // 启动卷可用空间
+    public let diskTotalBytes: Double?
+
     // 电池容量 / 健康度 / 循环次数（AppleSmartBattery）
     public let batteryDesignCapacityMAh: Double?      // DesignCapacity
     public let batteryFullChargeCapacityMAh: Double?  // AppleRawMaxCapacity
@@ -149,6 +158,31 @@ public struct PowerReading: Identifiable, Sendable {
     public var fanStopped: Bool {
         guard let fanRPM else { return false }
         return fanRPM < 1 && (fanMinRPM ?? 0) > 0
+    }
+
+    /// 磁盘是否有读数
+    public var hasDiskActivity: Bool { diskReadBytesPerSec != nil || diskWriteBytesPerSec != nil }
+
+    /// 读 / 写速率文案
+    public var diskReadText: String { ByteFormat.rate(diskReadBytesPerSec) }
+    public var diskWriteText: String { ByteFormat.rate(diskWriteBytesPerSec) }
+
+    /// 本次开机以来的累计读写
+    public var diskReadTotalText: String { ByteFormat.size(diskReadBytesTotal) }
+    public var diskWriteTotalText: String { ByteFormat.size(diskWriteBytesTotal) }
+
+    /// 启动卷可用 / 总容量文案
+    public var diskFreeText: String { ByteFormat.size(diskFreeBytes) }
+    public var diskCapacityText: String {
+        guard let total = diskTotalBytes, total > 0 else { return "—" }
+        let free = diskFreeText
+        return free + " / " + ByteFormat.size(total)
+    }
+
+    /// 磁盘已用比例 0...1
+    public var diskUsedShare: Double? {
+        guard let total = diskTotalBytes, total > 0, let free = diskFreeBytes else { return nil }
+        return max(0, min(1, 1 - free / total))
     }
 
     /// 电池健康度（满充容量 / 设计容量），0–130%，读不到为 nil
@@ -244,6 +278,13 @@ public struct PowerReading: Identifiable, Sendable {
         fanMinRPM: Double? = nil,
         fanMaxRPM: Double? = nil,
         fanTargetRPM: Double? = nil,
+        diskCount: Int? = nil,
+        diskReadBytesPerSec: Double? = nil,
+        diskWriteBytesPerSec: Double? = nil,
+        diskReadBytesTotal: Double? = nil,
+        diskWriteBytesTotal: Double? = nil,
+        diskFreeBytes: Double? = nil,
+        diskTotalBytes: Double? = nil,
         batteryDesignCapacityMAh: Double? = nil,
         batteryFullChargeCapacityMAh: Double? = nil,
         batteryCycleCount: Int? = nil,
@@ -289,6 +330,13 @@ public struct PowerReading: Identifiable, Sendable {
         self.fanTargetRPM = fanTargetRPM
         self.fanMinRPM = fanMinRPM
         self.fanMaxRPM = fanMaxRPM
+        self.diskCount = diskCount
+        self.diskReadBytesPerSec = diskReadBytesPerSec
+        self.diskWriteBytesPerSec = diskWriteBytesPerSec
+        self.diskReadBytesTotal = diskReadBytesTotal
+        self.diskWriteBytesTotal = diskWriteBytesTotal
+        self.diskFreeBytes = diskFreeBytes
+        self.diskTotalBytes = diskTotalBytes
         self.batteryDesignCapacityMAh = batteryDesignCapacityMAh
         self.batteryFullChargeCapacityMAh = batteryFullChargeCapacityMAh
         self.batteryCycleCount = batteryCycleCount
@@ -308,6 +356,26 @@ public enum PowerFormat {
 
     public static func wattsWithUnit(_ value: Double?, digits: Int = 1) -> String {
         "\(watts(value, digits: digits)) W"
+    }
+}
+
+/// 磁盘 / 容量的字节格式化（十进制单位，与活动监视器一致）
+public enum ByteFormat {
+    public static func rate(_ bytesPerSec: Double?) -> String {
+        guard let value = bytesPerSec, value.isFinite, value >= 0 else { return "—" }
+        if value >= 1_000_000_000 { return String(format: "%.2f GB/s", value / 1_000_000_000) }
+        if value >= 1_000_000 { return String(format: "%.1f MB/s", value / 1_000_000) }
+        if value >= 1_000 { return String(format: "%.0f KB/s", value / 1_000) }
+        return String(format: "%.0f B/s", value)
+    }
+
+    public static func size(_ bytes: Double?) -> String {
+        guard let value = bytes, value.isFinite, value >= 0 else { return "—" }
+        if value >= 1_000_000_000_000 { return String(format: "%.2f TB", value / 1_000_000_000_000) }
+        if value >= 1_000_000_000 { return String(format: "%.1f GB", value / 1_000_000_000) }
+        if value >= 1_000_000 { return String(format: "%.0f MB", value / 1_000_000) }
+        if value >= 1_000 { return String(format: "%.0f KB", value / 1_000) }
+        return String(format: "%.0f B", value)
     }
 }
 

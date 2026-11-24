@@ -77,6 +77,14 @@ typedef struct SPReading {
     double  anePowerW;
     double  dramPowerW;
 
+    /* ---- 磁盘 I/O（IOBlockStorageDriver.Statistics，累计字节数） ---- */
+    int32_t diskAvailable;
+    int32_t diskCount;       /* 参与统计的物理磁盘数量 */
+    double  diskReadBytes;   /* 开机以来累计读取字节数 */
+    double  diskWriteBytes;  /* 开机以来累计写入字节数 */
+    double  diskReadOps;
+    double  diskWriteOps;
+
     /* ---- 温度（°C，读不到为 NaN） ---- */
     double  cpuTempC;      // Tp* 集群传感器取最大；Intel 回退 TC0P/TC0D
     double  gpuTempC;      // Tg0D / Tg0B / Tg0P，Intel TG0P

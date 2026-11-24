@@ -25,7 +25,7 @@ A native macOS menu-bar power monitor. It shows real-time system power, how much
 | Where the power comes from | A Sankey-style flow diagram: adapter and battery ports on the left, the system in the middle, loads on the right, plus an adapter-vs-battery share bar. The battery node is **always** present when a battery is installed |
 | Visualisation | Flow diagram; stacked area chart (adapter vs battery, 1 / 5 / 15 min); line chart of total power and net battery power in the main window |
 
-Also included: adapter DC input (with measured input voltage and current) and rated wattage, estimated wall power, battery percentage and time remaining, **battery health with full-charge / design capacity and cycle count**, fan RPM, CPU / GPU / SSD / battery / platform temperatures, display backlight power, USB-C output power, and session energy (Wh).
+Also included: adapter DC input (with measured input voltage and current) and rated wattage, estimated wall power, battery percentage and time remaining, **battery health with full-charge / design capacity and cycle count**, **disk read / write throughput with volume free space**, fan RPM, CPU / GPU / SSD / battery / platform temperatures, display backlight power, USB-C output power, and session energy (Wh).
 
 ---
 

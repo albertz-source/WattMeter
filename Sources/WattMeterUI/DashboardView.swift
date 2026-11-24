@@ -30,6 +30,7 @@ public struct DashboardView: View {
             FlowDiagram(reading: store.latest)
             SourceSplitBar(reading: store.latest)
             TempStrip(reading: store.latest)
+            DiskStrip(reading: store.latest)
             trendCard
             rowsCard
             footerBar
