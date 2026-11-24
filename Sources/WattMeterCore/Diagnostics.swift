@@ -30,6 +30,22 @@ public enum Diagnostics {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - 电池原始键
+
+    public static func batteryKeys() -> String {
+        let reader = PowerReader()
+        var lines: [String] = ["== AppleSmartBattery 容量 / 循环 / 健康键 =="]
+        let dump = reader.dumpBatteryKeys()
+        lines.append(dump.isEmpty ? "（没有可用的键）" : dump.trimmingCharacters(in: .newlines))
+        if let r = reader.read() {
+            lines.append("解析: 设计 \(r.batteryDesignCapacityMAh.map { String(format: "%.0f mAh", $0) } ?? "—")"
+                         + "   满充 \(r.batteryFullChargeCapacityMAh.map { String(format: "%.0f mAh", $0) } ?? "—")"
+                         + "   健康度 \(r.batteryHealthText)"
+                         + "   循环 \(r.batteryCycleCount.map(String.init) ?? "—") 次")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - 芯片分项
 
     public static func chips() -> String {
@@ -88,6 +104,14 @@ public enum Diagnostics {
         lines.append("芯片: CPU \(f(r.cpuPowerW)) W   GPU \(f(r.gpuPowerW)) W   "
                      + "ANE \(f(r.anePowerW)) W   DRAM \(f(r.dramPowerW)) W")
         lines.append("风扇: \(r.fanText) RPM（\(r.fanCount ?? 0) 个）")
+
+        // 电池容量 / 健康度 / 循环次数
+        lines.append("容量: 满充 \(f(r.batteryFullChargeCapacityMAh, 0)) mAh / 设计 \(f(r.batteryDesignCapacityMAh, 0)) mAh   "
+                     + "健康度 \(r.batteryHealthPercent.map { String(format: "%.1f%%", $0) } ?? "—")")
+        lines.append("循环: \(r.batteryCycleCount.map(String.init) ?? "—") 次"
+                     + (r.batteryDesignCycleCount.map { " / 设计 \($0) 次" } ?? "")
+                     + "   健康文案: \(r.batteryHealthLabel ?? "—")"
+                     + (r.batteryHealthCondition.map { " (\($0))" } ?? ""))
 
         let state: String
         if !r.hasBattery {

@@ -58,6 +58,15 @@ typedef struct SPReading {
     double  timeRemainingMinutes; // <0 表示未知/不限
     char    powerSourceState[32]; // "AC Power" / "Battery Power" / "Unknown"
 
+    /* ---- 电池容量 / 健康度 / 循环次数（AppleSmartBattery + IOPS） ---- */
+    int32_t batteryCapacityAvailable;      // 设计容量与满充容量都读到才置 1
+    double  batteryDesignCapacity_mAh;     // DesignCapacity（出厂设计容量）
+    double  batteryFullChargeCapacity_mAh; // AppleRawMaxCapacity（回退 NominalChargeCapacity / MaxCapacity）
+    int32_t batteryCycleCount;             // CycleCount，-1 表示未知
+    int32_t batteryDesignCycleCount;       // DesignCycleCount9C，-1 表示未知
+    char    batteryHealth[40];             // IOPS BatteryHealth（"Good" / "Fair" / "Poor"）
+    char    batteryHealthCondition[40];    // IOPS BatteryHealthCondition（"Normal" / "Service Battery"）
+
     /* ---- 芯片分项功率（W，读不到为 NaN；来自 IOReport Energy Model） ---- */
     int32_t cpuPowerAvailable;
     int32_t gpuPowerAvailable;
@@ -120,6 +129,9 @@ int32_t sp_reader_dump_fan_keys(SPReader *reader, char *buffer, int32_t size);
 
 /* 导出 IOReport 能耗通道（诊断 CPU/GPU/ANE/DRAM 读数用）。 */
 int32_t sp_reader_dump_energy_channels(SPReader *reader, char *buffer, int32_t size);
+
+/* 把 AppleSmartBattery 里与容量 / 循环 / 健康相关的键值写成文本（诊断用） */
+int32_t sp_reader_dump_battery_keys(char *buffer, int32_t size);
 
 #ifdef __cplusplus
 }

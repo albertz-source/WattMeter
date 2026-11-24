@@ -183,6 +183,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tip += "\n" + L("整机") + " " + PowerFormat.wattsWithUnit(reading.totalW)
         tip += " · " + L("电源") + " " + PowerFormat.wattsWithUnit(reading.adapterToLoadW)
         tip += " · " + L("电池") + " " + PowerFormat.wattsWithUnit(reading.batteryToLoadW)
+        if let health = reading.batteryHealthPercent {
+            tip += " · " + L("健康度") + " " + String(format: "%.0f%%", health)
+        }
+        if let cycles = reading.batteryCycleCount {
+            tip += " · " + localizedCycles(cycles)
+        }
         if let input = reading.adapterInputW {
             tip += "\n" + L("适配器输入") + " " + PowerFormat.wattsWithUnit(input)
             if let walls = reading.wallPowerW {
@@ -369,13 +375,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onQuit: { NSApp.terminate(nil) }
         )
         let controller = NSHostingController(rootView: root)
-        controller.preferredContentSize = NSSize(width: 400, height: 680)
+        // 面板实测高度 719pt（含电池健康行），留 1pt 余量避免底部被裁
+        controller.preferredContentSize = NSSize(width: 400, height: 720)
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentSize = NSSize(width: 400, height: 680)
+        popover.contentSize = NSSize(width: 400, height: 720)
         popover.contentViewController = controller
         self.popover = popover
     }
@@ -405,9 +412,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let window = NSWindow(contentViewController: controller)
             window.title = "WattMeter"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            // 内容实测高度约 820pt；按真实内容开窗，避免底部被裁掉。
+            // 内容实测高度约 866pt（侧栏多了一行电池健康）；按真实内容开窗，
+            // 避免底部被裁掉。
             // 用户手动缩小时由 MainWindowView 的 ScrollView 兜底。
-            window.setContentSize(NSSize(width: 1020, height: 832))
+            window.setContentSize(NSSize(width: 1020, height: 880))
             window.minSize = NSSize(width: 960, height: 600)
             window.isReleasedWhenClosed = false
             window.tabbingMode = .disallowed

@@ -76,6 +76,12 @@ public struct DashboardView: View {
                      unit: "W",
                      tint: Palette.amber)
             Divider().opacity(0.18)
+            PowerRow(icon: "heart.text.square.fill",
+                     title: L("电池健康"),
+                     caption: batteryHealthCaption,
+                     value: latest?.batteryHealthText ?? "—",
+                     tint: Palette.amber)
+            Divider().opacity(0.18)
             PowerRow(icon: "fan",
                      title: L("风扇转速"),
                      caption: fanCaption,
@@ -103,6 +109,18 @@ public struct DashboardView: View {
         }
         if let min = latest.fanMinRPM, let max = latest.fanMaxRPM {
             parts.append(String(format: "%.0f–%.0f RPM", min, max))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// 电池健康行：满充 / 设计容量 + 循环次数
+    private var batteryHealthCaption: String {
+        guard let latest = store.latest else { return L("等待数据") }
+        if !latest.hasBattery { return L("本机无内置电池") }
+        guard latest.hasBatteryHealth else { return L("系统未提供容量数据") }
+        var parts = [latest.batteryCapacityText]
+        if let cycles = latest.batteryCycleCount {
+            parts.append(localizedCycles(cycles))
         }
         return parts.joined(separator: " · ")
     }

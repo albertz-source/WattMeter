@@ -138,6 +138,12 @@ public struct DemoGenerator {
             fanMinRPM: 1700,
             fanMaxRPM: 4900,
             fanTargetRPM: fan,
+            batteryDesignCapacityMAh: 6075,
+            batteryFullChargeCapacityMAh: 5640,
+            batteryCycleCount: 213,
+            batteryDesignCycleCount: 1000,
+            batteryHealthLabel: "Good",
+            batteryHealthCondition: "Normal",
             source: .synthetic
         )
     }

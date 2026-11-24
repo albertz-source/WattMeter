@@ -453,6 +453,25 @@ static void read_smart_battery(SPReading *r) {
         r->batteryAmperage_mA = cf_signed_number(props, CFSTR("InstantAmperage"));
     }
 
+    /* 容量 / 健康度 / 循环次数 */
+    r->batteryDesignCapacity_mAh = cf_double(props, CFSTR("DesignCapacity"), -1.0);
+    double fullCharge = cf_double(props, CFSTR("AppleRawMaxCapacity"), -1.0);
+    if (fullCharge <= 0) {
+        fullCharge = cf_double(props, CFSTR("NominalChargeCapacity"), -1.0);
+    }
+    if (fullCharge <= 0) {
+        /* 老机型（Intel）的 MaxCapacity 是 mAh，Apple Silicon 上是百分比 */
+        double legacyMax = cf_double(props, CFSTR("MaxCapacity"), -1.0);
+        if (legacyMax > 200) fullCharge = legacyMax;
+    }
+    r->batteryFullChargeCapacity_mAh = fullCharge;
+    r->batteryCycleCount = (int32_t)cf_double(props, CFSTR("CycleCount"), -1.0);
+    r->batteryDesignCycleCount = (int32_t)cf_double(props, CFSTR("DesignCycleCount9C"), -1.0);
+    if (r->batteryDesignCapacity_mAh > 100 && r->batteryFullChargeCapacity_mAh > 100 &&
+        r->batteryFullChargeCapacity_mAh < 40000) {
+        r->batteryCapacityAvailable = 1;
+    }
+
     /* 适配器信息 */
     CFDictionaryRef adapter = cf_dict(props, CFSTR("AdapterDetails"));
     if (adapter) {
@@ -558,6 +577,11 @@ static void read_iops(SPReading *r) {
                 if (cur >= 0 && max > 0) {
                     r->socPercent = cur / max * 100.0;
                 }
+
+                /* 电池健康度文案（"Good" / "Fair" / "Poor"，以及 "Service Battery" 等） */
+                cf_string(desc, CFSTR(kIOPSBatteryHealthKey), r->batteryHealth, sizeof r->batteryHealth);
+                cf_string(desc, CFSTR(kIOPSBatteryHealthConditionKey),
+                          r->batteryHealthCondition, sizeof r->batteryHealthCondition);
                 break;
             }
             CFRelease(sources);
@@ -993,6 +1017,78 @@ int32_t sp_reader_dump_fan_keys(SPReader *reader, char *buffer, int32_t size) {
     return used;
 }
 
+/* 把 AppleSmartBattery 的容量 / 循环 / 健康相关键值格式化成文本 */
+static int battery_key_interesting(const char *key) {
+    return strstr(key, "Capacity") || strstr(key, "Cycle") ||
+           strstr(key, "Health") || strstr(key, "Design") ||
+           strstr(key, "Nominal");
+}
+
+int32_t sp_reader_dump_battery_keys(char *buffer, int32_t size) {
+    if (!buffer || size <= 1) return 0;
+    buffer[0] = '\0';
+    io_service_t svc = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                   IOServiceMatching("AppleSmartBattery"));
+    if (!svc) {
+        snprintf(buffer, (size_t)size, "没有 AppleSmartBattery（台式机 / 无电池）\n");
+        return (int32_t)strlen(buffer);
+    }
+    CFMutableDictionaryRef props = NULL;
+    if (IORegistryEntryCreateCFProperties(svc, &props, kCFAllocatorDefault, 0) != KERN_SUCCESS || !props) {
+        IOObjectRelease(svc);
+        snprintf(buffer, (size_t)size, "读取 AppleSmartBattery 属性失败\n");
+        return (int32_t)strlen(buffer);
+    }
+    IOObjectRelease(svc);
+
+    CFIndex n = CFDictionaryGetCount(props);
+    if (n <= 0) {
+        CFRelease(props);
+        return 0;
+    }
+    const void **keys = malloc(sizeof(void *) * (size_t)n);
+    const void **vals = malloc(sizeof(void *) * (size_t)n);
+    int used = 0;
+    if (keys && vals) {
+        CFDictionaryGetKeysAndValues(props, keys, vals);
+        for (CFIndex i = 0; i < n; i++) {
+            if (!keys[i] || CFGetTypeID(keys[i]) != CFStringGetTypeID()) continue;
+            char key[160];
+            if (!CFStringGetCString((CFStringRef)keys[i], key, sizeof key, kCFStringEncodingUTF8)) continue;
+            if (!battery_key_interesting(key)) continue;
+
+            char line[256];
+            CFTypeRef v = vals[i];
+            if (v && CFGetTypeID(v) == CFNumberGetTypeID()) {
+                long long iv = 0;
+                if (CFNumberGetValue((CFNumberRef)v, kCFNumberLongLongType, &iv)) {
+                    snprintf(line, sizeof line, "%-28s = %lld\n", key, iv);
+                } else {
+                    snprintf(line, sizeof line, "%-28s = (number)\n", key);
+                }
+            } else if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
+                char text[128] = {0};
+                CFStringGetCString((CFStringRef)v, text, sizeof text, kCFStringEncodingUTF8);
+                snprintf(line, sizeof line, "%-28s = \"%s\"\n", key, text);
+            } else if (v && CFGetTypeID(v) == CFBooleanGetTypeID()) {
+                snprintf(line, sizeof line, "%-28s = %s\n", key,
+                         CFBooleanGetValue((CFBooleanRef)v) ? "true" : "false");
+            } else {
+                continue;
+            }
+            int len = (int)strlen(line);
+            if (used + len >= size - 1) break;
+            memcpy(buffer + used, line, (size_t)len);
+            used += len;
+            buffer[used] = '\0';
+        }
+    }
+    free(keys);
+    free(vals);
+    CFRelease(props);
+    return used;
+}
+
 int32_t sp_reader_dump_energy_channels(SPReader *reader, char *buffer, int32_t size) {
     if (!reader || !buffer || size <= 1) return 0;
     SPIOReport *io = &reader->io;
@@ -1056,6 +1152,10 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
     out->platformTempC = NAN;
     out->socPercent = -1.0;
     out->timeRemainingMinutes = -1.0;
+    out->batteryDesignCapacity_mAh = -1.0;
+    out->batteryFullChargeCapacity_mAh = -1.0;
+    out->batteryCycleCount = -1;
+    out->batteryDesignCycleCount = -1;
     snprintf(out->powerSourceState, sizeof out->powerSourceState, "%s", "Unknown");
 
     /* SMC */

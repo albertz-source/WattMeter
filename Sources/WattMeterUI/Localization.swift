@@ -79,6 +79,11 @@ public func localizedTimeRemaining(_ minutes: Double?) -> String {
     return m >= 60 ? "\(m / 60) 小时 \(m % 60) 分" : "\(m) 分钟"
 }
 
+/// 循环次数文案（跟随语言）
+public func localizedCycles(_ count: Int) -> String {
+    Localization.shared.language == .en ? "\(count) cycles" : "\(count) 次"
+}
+
 /// 图表时间窗口标签
 public func localizedWindowLabel(_ seconds: Double) -> String {
     let zh: String
@@ -221,6 +226,13 @@ extension Localization {
         "好": "OK",
         "WattMeter — 实时功率": "WattMeter — real-time power",
         "菜单栏显示": "Menu bar shows",
+        "电池健康": "Battery health",
+        "满充 / 设计容量": "Full / design capacity",
+        "循环次数": "Cycle count",
+        "循环": "cycles",
+        "设计": "design",
+        "系统未提供容量数据": "Capacity not reported",
+        "健康度": "Health",
         "电源输入": "Adapter input",
         "电池功率": "Battery power",
         "右键可切换菜单栏数值": "Right-click to change the menu bar value",

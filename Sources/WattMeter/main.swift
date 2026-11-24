@@ -15,6 +15,10 @@ if CommandLine.arguments.contains("--battery") {
     print(Diagnostics.battery())
     exit(0)
 }
+if CommandLine.arguments.contains("--battery-keys") {
+    print(Diagnostics.batteryKeys())
+    exit(0)
+}
 if CommandLine.arguments.contains("--split-test") {
     let result = Diagnostics.splitTest()
     print(result.text)

@@ -223,6 +223,18 @@ public final class PowerReader {
             fanMinRPM: fanMin,
             fanMaxRPM: fanMax,
             fanTargetRPM: fanTarget,
+            // 台式机的 IORegistry 里也会有一个空的 AppleSmartBattery 节点
+            //（容量 / 循环次数都是 0），只有真正装了电池才展示这些字段。
+            batteryDesignCapacityMAh: hasBattery && raw.batteryCapacityAvailable != 0
+                && raw.batteryDesignCapacity_mAh > 0 ? raw.batteryDesignCapacity_mAh : nil,
+            batteryFullChargeCapacityMAh: hasBattery && raw.batteryCapacityAvailable != 0
+                && raw.batteryFullChargeCapacity_mAh > 0 ? raw.batteryFullChargeCapacity_mAh : nil,
+            batteryCycleCount: hasBattery && raw.batteryCycleCount >= 0 ? Int(raw.batteryCycleCount) : nil,
+            batteryDesignCycleCount: hasBattery && raw.batteryDesignCycleCount > 0
+                ? Int(raw.batteryDesignCycleCount) : nil,
+            batteryHealthLabel: hasBattery && !raw.batteryHealthString.isEmpty ? raw.batteryHealthString : nil,
+            batteryHealthCondition: hasBattery && !raw.batteryHealthConditionString.isEmpty
+                ? raw.batteryHealthConditionString : nil,
             source: dataSource
         )
     }
@@ -298,6 +310,14 @@ public final class PowerReader {
         return String(cString: buffer)
     }
 
+    /// 导出 AppleSmartBattery 的容量 / 循环 / 健康键（诊断用）
+    public func dumpBatteryKeys() -> String {
+        var buffer = [CChar](repeating: 0, count: 16384)
+        let written = sp_reader_dump_battery_keys(&buffer, 16384)
+        guard written > 0 else { return "" }
+        return String(cString: buffer)
+    }
+
     /// 导出 IOReport 能耗通道（诊断用）
     public func dumpEnergyChannels() -> String {
         guard let handle else { return "" }
@@ -353,6 +373,20 @@ private extension SPReading {
     /// 读取 C 结构里的定长字符串
     var adapterNameString: String {
         withUnsafeBytes(of: adapterName) { buffer in
+            guard let base = buffer.baseAddress else { return "" }
+            return String(cString: base.assumingMemoryBound(to: CChar.self))
+        }
+    }
+
+    var batteryHealthString: String {
+        withUnsafeBytes(of: batteryHealth) { buffer in
+            guard let base = buffer.baseAddress else { return "" }
+            return String(cString: base.assumingMemoryBound(to: CChar.self))
+        }
+    }
+
+    var batteryHealthConditionString: String {
+        withUnsafeBytes(of: batteryHealthCondition) { buffer in
             guard let base = buffer.baseAddress else { return "" }
             return String(cString: base.assumingMemoryBound(to: CChar.self))
         }

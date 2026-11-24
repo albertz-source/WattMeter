@@ -187,6 +187,9 @@ public struct MainWindowView: View {
                     Divider().opacity(0.18)
                     powerRow("square.split.2x1", L("来源占比"), L("电源 / 电池"),
                              batteryShareText, nil, Palette.blue)
+                    Divider().opacity(0.18)
+                    powerRow("heart.text.square.fill", L("电池健康"), healthCaption,
+                             store.latest?.batteryHealthText ?? "—", nil, Palette.amber)
                 }
             }
 
@@ -218,6 +221,18 @@ public struct MainWindowView: View {
                 .foregroundStyle(.white.opacity(0.3))
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// 电池健康行副标题：满充 / 设计容量 · 循环次数
+    private var healthCaption: String {
+        guard let latest = store.latest else { return "—" }
+        if !latest.hasBattery { return L("本机无内置电池") }
+        guard latest.hasBatteryHealth else { return L("系统未提供容量数据") }
+        var parts = [latest.batteryCapacityText]
+        if let cycles = latest.batteryCycleCount {
+            parts.append(localizedCycles(cycles))
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var batteryShareText: String {

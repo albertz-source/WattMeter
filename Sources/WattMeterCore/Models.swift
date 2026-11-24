@@ -88,6 +88,14 @@ public struct PowerReading: Identifiable, Sendable {
     public let fanMaxRPM: Double?
     public let fanTargetRPM: Double?
 
+    // 电池容量 / 健康度 / 循环次数（AppleSmartBattery）
+    public let batteryDesignCapacityMAh: Double?      // DesignCapacity
+    public let batteryFullChargeCapacityMAh: Double?  // AppleRawMaxCapacity
+    public let batteryCycleCount: Int?                // CycleCount
+    public let batteryDesignCycleCount: Int?          // DesignCycleCount9C
+    public let batteryHealthLabel: String?            // IOPS "Good" / "Fair" / "Poor"
+    public let batteryHealthCondition: String?        // IOPS "Normal" / "Service Battery"
+
     public let source: PowerDataSource
 
     public var id: Double { timestamp.timeIntervalSince1970 }
@@ -142,6 +150,37 @@ public struct PowerReading: Identifiable, Sendable {
         guard let fanRPM else { return false }
         return fanRPM < 1 && (fanMinRPM ?? 0) > 0
     }
+
+    /// 电池健康度（满充容量 / 设计容量），0–130%，读不到为 nil
+    public var batteryHealthPercent: Double? {
+        guard hasBattery,
+              let design = batteryDesignCapacityMAh, design > 100,
+              let full = batteryFullChargeCapacityMAh, full > 100 else { return nil }
+        let percent = full / design * 100.0
+        guard percent.isFinite, percent > 1, percent < 130 else { return nil }
+        return percent
+    }
+
+    /// 健康度文案，例如「94%」
+    public var batteryHealthText: String {
+        guard let percent = batteryHealthPercent else { return "—" }
+        return String(format: "%.0f%%", percent)
+    }
+
+    /// 满充容量 / 设计容量文案，例如「5640 / 6075 mAh」
+    public var batteryCapacityText: String {
+        guard let full = batteryFullChargeCapacityMAh,
+              let design = batteryDesignCapacityMAh else { return "—" }
+        return String(format: "%.0f / %.0f mAh", full, design)
+    }
+
+    /// 循环次数文案，例如「213 次」
+    public var batteryCycleText: String {
+        guard let cycles = batteryCycleCount else { return "—" }
+        return "\(cycles) 次"
+    }
+
+    public var hasBatteryHealth: Bool { batteryHealthPercent != nil }
 
     /// 是否处于「电源 + 电池」混合供电（弱充电器无法单独满足负载，电池补足）
     public var isHybrid: Bool {
@@ -205,6 +244,12 @@ public struct PowerReading: Identifiable, Sendable {
         fanMinRPM: Double? = nil,
         fanMaxRPM: Double? = nil,
         fanTargetRPM: Double? = nil,
+        batteryDesignCapacityMAh: Double? = nil,
+        batteryFullChargeCapacityMAh: Double? = nil,
+        batteryCycleCount: Int? = nil,
+        batteryDesignCycleCount: Int? = nil,
+        batteryHealthLabel: String? = nil,
+        batteryHealthCondition: String? = nil,
         source: PowerDataSource
     ) {
         self.timestamp = timestamp
@@ -244,6 +289,12 @@ public struct PowerReading: Identifiable, Sendable {
         self.fanTargetRPM = fanTargetRPM
         self.fanMinRPM = fanMinRPM
         self.fanMaxRPM = fanMaxRPM
+        self.batteryDesignCapacityMAh = batteryDesignCapacityMAh
+        self.batteryFullChargeCapacityMAh = batteryFullChargeCapacityMAh
+        self.batteryCycleCount = batteryCycleCount
+        self.batteryDesignCycleCount = batteryDesignCycleCount
+        self.batteryHealthLabel = batteryHealthLabel
+        self.batteryHealthCondition = batteryHealthCondition
         self.source = source
     }
 }
