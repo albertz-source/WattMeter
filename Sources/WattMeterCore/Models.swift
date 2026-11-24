@@ -259,3 +259,68 @@ public enum PowerFormat {
         "\(watts(value, digits: digits)) W"
     }
 }
+
+/// 菜单栏数值的取值口径。
+///
+/// 默认显示「电源输入」（适配器 DC 输入功率，也就是机器从电源实际拿到的功率）；
+/// 台式机没有电池时适配器输入等于整机负载，两者一致。
+public enum MenuBarMetric: String, CaseIterable {
+    /// 适配器 DC 输入功率（未接电源时回退到整机功耗）
+    case adapterInput
+    /// 墙插估算功率（DC 输入 + 适配器损耗；台式机含电源损耗）
+    case wallPower
+    /// 整机功耗（PSTR / 系统负载）
+    case systemPower
+    /// 电池净功率（正 = 充电，负 = 放电）
+    case batteryPower
+
+    public static let defaultsKey = "wattmeter.menubar.metric"
+
+    public var title: String {
+        switch self {
+        case .adapterInput: return "电源输入"
+        case .wallPower:    return "墙插估算"
+        case .systemPower:  return "整机功耗"
+        case .batteryPower: return "电池功率"
+        }
+    }
+
+    /// 当前读数下这一口径的功率；返回 nil 表示没有可用值
+    public func value(for reading: PowerReading) -> Double? {
+        switch self {
+        case .adapterInput:
+            if let input = reading.adapterInputW, input.isFinite, input > 0.05 {
+                return input
+            }
+            // 电池供电时没有输入功率：回退到整机功耗，避免菜单栏没有数字
+            return reading.systemPowerW ?? reading.adapterToLoadW + reading.batteryToLoadW
+        case .wallPower:
+            if let wall = reading.wallPowerW, wall.isFinite, wall > 0.05 {
+                return wall
+            }
+            if let input = reading.adapterInputW, input.isFinite, input > 0.05 {
+                return input
+            }
+            return reading.systemPowerW ?? reading.adapterToLoadW + reading.batteryToLoadW
+        case .systemPower:
+            return reading.totalW
+        case .batteryPower:
+            guard let battery = reading.batteryPowerW, battery.isFinite else { return nil }
+            return battery
+        }
+    }
+
+    /// 菜单栏文字（不含前导空格）；无法计算时返回空字符串，由调用方决定回退
+    public func text(for reading: PowerReading) -> String {
+        guard let value = value(for: reading), value.isFinite else { return "" }
+        switch self {
+        case .batteryPower:
+            // 充电 / 放电用符号区分；接近 0 时不带符号
+            guard abs(value) >= 0.05 else { return "0.0W" }
+            let sign = value >= 0 ? "+" : "−"
+            return sign + PowerFormat.watts(abs(value)) + "W"
+        default:
+            return PowerFormat.watts(value) + "W"
+        }
+    }
+}

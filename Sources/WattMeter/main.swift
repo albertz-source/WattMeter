@@ -21,6 +21,30 @@ if CommandLine.arguments.contains("--split-test") {
     exit(result.failed == 0 ? 0 : 1)
 }
 
+// --menubar-test：不打开界面，打印菜单栏在各种口径下会显示的文字
+if CommandLine.arguments.contains("--menubar-test") {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.prohibited)
+    let store = PowerStore()
+    store.start()
+    let deadline = Date().addingTimeInterval(2.5)
+    while Date() < deadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+    }
+    guard let latest = store.latest else {
+        print("menubar-test FAILED: 没有读到功率数据")
+        exit(1)
+    }
+    print("current metric=\(MenuBarMetric(rawValue: UserDefaults.standard.string(forKey: MenuBarMetric.defaultsKey) ?? "")?.rawValue ?? "adapterInput(default)")")
+    for metric in MenuBarMetric.allCases {
+        print("  \(metric.rawValue.padding(toLength: 14, withPad: " ", startingAt: 0)) \(metric.text(for: latest))")
+    }
+    print(String(format: "  readings: system=%.2f input=%.2f wall=%.2f battery=%.2f",
+                 latest.totalW, latest.adapterInputW ?? -1,
+                 latest.wallPowerW ?? -1, latest.batteryPowerW ?? 0))
+    exit(0)
+}
+
 // --login-item：命令行查看/开关登录项（便于验证与自动化）
 if CommandLine.arguments.contains("--login-item") {
     LoginItemController().handleCommandLine()
