@@ -7,9 +7,10 @@ WattMeter — installation
 
        xattr -dr com.apple.quarantine /Applications/WattMeter.app
 
-3. A live power reading (e.g. 12.3W) appears in the menu bar.
-   Click it to open the panel. Right-click it for the main window,
-   launch at login, language and quit.
+3. A live power reading (e.g. 12.3W) appears in the menu bar — it shows the
+   adapter input power. Click it to open the panel. Right-click it for the main
+   window, the menu bar metric (adapter input / wall estimate / system power /
+   battery power), launch at login, language and quit.
 4. To quit: right-click the menu bar reading, then Quit WattMeter.
 
 Requirements: macOS 13 or later, Apple Silicon or Intel.
@@ -22,8 +23,9 @@ The app reads data locally only: no network access, no root required.
 1. 把 WattMeter.app 拖到右侧的 Applications（应用程序）文件夹。
 2. 首次打开若提示「无法验证开发者」，在「应用程序」里右键 WattMeter → 打开，
    或在终端执行：xattr -dr com.apple.quarantine /Applications/WattMeter.app
-3. 菜单栏会出现实时功率（例如 12.3W），点击展开面板；
-   右键可打开主窗口、开机启动、切换语言或退出。
+3. 菜单栏会出现实时功率（例如 12.3W），默认显示电源输入功率；点击展开面板；
+   右键可打开主窗口、切换菜单栏数值（电源输入 / 墙插估算 / 整机功耗 / 电池功率）、
+   开机启动、切换语言或退出。
 4. 退出：右键菜单栏数字 →「退出 WattMeter」。
 
 系统要求：macOS 13 及以上，Apple Silicon 或 Intel。

@@ -21,7 +21,7 @@ A native macOS menu-bar power monitor. It shows real-time system power, how much
 
 | Requirement | Implementation |
 | --- | --- |
-| Total power | Menu bar shows live system power; the panel shows a large readout from AppleSMC `PSTR` |
+| Total power | The menu bar shows live power — **adapter input by default** (switch to wall estimate / system power / battery power from the right-click menu); the panel shows a large system readout from AppleSMC `PSTR` |
 | Where the power comes from | A Sankey-style flow diagram: adapter and battery ports on the left, the system in the middle, loads on the right, plus an adapter-vs-battery share bar. The battery node is **always** present when a battery is installed |
 | Visualisation | Flow diagram; stacked area chart (adapter vs battery, 1 / 5 / 15 min); line chart of total power and net battery power in the main window |
 
@@ -165,7 +165,7 @@ The visual language is inspired by [PowerLens](https://github.com/kinghhhin-desi
 | Language | English / 简体中文, switch in the panel footer or via the right-click menu (persisted) |
 | About | An About window (ⓘ button or right-click menu) with version/build, requirements, links, credits and a “copy diagnostics” button |
 | Launch at login | Toggle in the panel footer or the right-click menu. Uses `SMAppService.mainApp`; macOS may ask for approval in System Settings → General → Login Items |
-| Menu bar | Monospaced digits, width auto-fitted, detailed tooltip, single-instance guard |
+| Menu bar | Adapter input power by default (metric switchable), monospaced digits, auto width, detailed tooltip, self-healing status item, single-instance guard |
 
 Charging, discharging, battery standby and no-battery desktops each get a different diagram layout;
 branches without telemetry are dimmed instead of being hidden. Whenever a battery is installed it is
