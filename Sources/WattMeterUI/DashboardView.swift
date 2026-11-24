@@ -31,6 +31,7 @@ public struct DashboardView: View {
             SourceSplitBar(reading: store.latest)
             TempStrip(reading: store.latest)
             DiskStrip(reading: store.latest)
+            SystemStrip(reading: store.latest)
             trendCard
             rowsCard
             footerBar

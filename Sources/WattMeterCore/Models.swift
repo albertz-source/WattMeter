@@ -88,6 +88,23 @@ public struct PowerReading: Identifiable, Sendable {
     public let fanMaxRPM: Double?
     public let fanTargetRPM: Double?
 
+    // 内存使用
+    public let memoryTotalBytes: Double?
+    public let memoryUsedBytes: Double?
+    public let memoryAppBytes: Double?
+    public let memoryWiredBytes: Double?
+    public let memoryCompressedBytes: Double?
+    public let swapUsedBytes: Double?
+    public let swapTotalBytes: Double?
+
+    // 网络：速率（每秒增量）与开机以来累计量
+    public let netInBytesPerSec: Double?
+    public let netOutBytesPerSec: Double?
+    public let netInBytesTotal: Double?
+    public let netOutBytesTotal: Double?
+    public let netLinkBps: Double?
+    public let netPrimaryInterface: String?
+
     // SSD SMART（NVMe）：寿命、累计读写量、健康度
     public let ssdModel: String?
     public let ssdPercentUsed: Double?        // 寿命已用百分比
@@ -171,6 +188,43 @@ public struct PowerReading: Identifiable, Sendable {
         guard let fanRPM else { return false }
         return fanRPM < 1 && (fanMinRPM ?? 0) > 0
     }
+
+    // MARK: - 内存
+
+    /// 内存使用率 0...1
+    public var memoryUsedShare: Double? {
+        guard let total = memoryTotalBytes, total > 0, let used = memoryUsedBytes else { return nil }
+        return max(0, min(1, used / total))
+    }
+
+    public var memoryUsedPercentText: String {
+        guard let share = memoryUsedShare else { return "—" }
+        return String(format: "%.0f%%", share * 100)
+    }
+
+    /// 已用 / 总容量文案（内存用 1024 进制，与活动监视器一致：16 GB 而不是 17.2 GB）
+    public var memoryText: String {
+        guard let used = memoryUsedBytes, let total = memoryTotalBytes else { return "—" }
+        return ByteFormat.memorySize(used) + " / " + ByteFormat.memorySize(total)
+    }
+
+    /// 交换区文案；未启用交换时返回 nil
+    public var swapText: String? {
+        guard let used = swapUsedBytes, used > 0 else { return nil }
+        return ByteFormat.memorySize(used)
+    }
+
+    // MARK: - 网络
+
+    public var hasNetwork: Bool { netInBytesTotal != nil || netOutBytesTotal != nil }
+
+    public var netInText: String { ByteFormat.rate(netInBytesPerSec) }
+    public var netOutText: String { ByteFormat.rate(netOutBytesPerSec) }
+    public var netInTotalText: String { ByteFormat.size(netInBytesTotal) }
+    public var netOutTotalText: String { ByteFormat.size(netOutBytesTotal) }
+
+    /// 连接速率文案，例如「1.0 Gb/s」
+    public var netLinkText: String { ByteFormat.linkSpeed(netLinkBps) }
 
     /// SSD SMART 是否有数据
     public var hasSSDSmart: Bool { ssdPercentUsed != nil || ssdReadBytesTotal != nil }
@@ -320,6 +374,19 @@ public struct PowerReading: Identifiable, Sendable {
         fanMinRPM: Double? = nil,
         fanMaxRPM: Double? = nil,
         fanTargetRPM: Double? = nil,
+        memoryTotalBytes: Double? = nil,
+        memoryUsedBytes: Double? = nil,
+        memoryAppBytes: Double? = nil,
+        memoryWiredBytes: Double? = nil,
+        memoryCompressedBytes: Double? = nil,
+        swapUsedBytes: Double? = nil,
+        swapTotalBytes: Double? = nil,
+        netInBytesPerSec: Double? = nil,
+        netOutBytesPerSec: Double? = nil,
+        netInBytesTotal: Double? = nil,
+        netOutBytesTotal: Double? = nil,
+        netLinkBps: Double? = nil,
+        netPrimaryInterface: String? = nil,
         ssdModel: String? = nil,
         ssdPercentUsed: Double? = nil,
         ssdAvailableSpare: Double? = nil,
@@ -382,6 +449,19 @@ public struct PowerReading: Identifiable, Sendable {
         self.fanTargetRPM = fanTargetRPM
         self.fanMinRPM = fanMinRPM
         self.fanMaxRPM = fanMaxRPM
+        self.memoryTotalBytes = memoryTotalBytes
+        self.memoryUsedBytes = memoryUsedBytes
+        self.memoryAppBytes = memoryAppBytes
+        self.memoryWiredBytes = memoryWiredBytes
+        self.memoryCompressedBytes = memoryCompressedBytes
+        self.swapUsedBytes = swapUsedBytes
+        self.swapTotalBytes = swapTotalBytes
+        self.netInBytesPerSec = netInBytesPerSec
+        self.netOutBytesPerSec = netOutBytesPerSec
+        self.netInBytesTotal = netInBytesTotal
+        self.netOutBytesTotal = netOutBytesTotal
+        self.netLinkBps = netLinkBps
+        self.netPrimaryInterface = netPrimaryInterface
         self.ssdModel = ssdModel
         self.ssdPercentUsed = ssdPercentUsed
         self.ssdAvailableSpare = ssdAvailableSpare
@@ -429,6 +509,35 @@ public enum ByteFormat {
         if value >= 1_000_000 { return String(format: "%.1f MB/s", value / 1_000_000) }
         if value >= 1_000 { return String(format: "%.0f KB/s", value / 1_000) }
         return String(format: "%.0f B/s", value)
+    }
+
+    /// 内存容量（1024 进制，和活动监视器一致）
+    public static func memorySize(_ bytes: Double?) -> String {
+        guard let value = bytes, value.isFinite, value >= 0 else { return "—" }
+        let units = ["B", "KB", "MB", "GB", "TB"]
+        var v = value
+        var index = 0
+        while v >= 1024, index < units.count - 1 {
+            v /= 1024
+            index += 1
+        }
+        let digits = index >= 3 ? 1 : 0
+        return String(format: "%.\(digits)f %@", v, units[index])
+    }
+
+    /// 链路速率（bit/s），例如 1000000000 → "1.0 Gb/s"
+    public static func linkSpeed(_ bitsPerSec: Double?) -> String {
+        guard let value = bitsPerSec, value.isFinite, value > 0 else { return "—" }
+        if value >= 1_000_000_000 {
+            return String(format: "%.1f Gb/s", value / 1_000_000_000)
+        }
+        if value >= 1_000_000 {
+            return String(format: "%.0f Mb/s", value / 1_000_000)
+        }
+        if value >= 1_000 {
+            return String(format: "%.0f Kb/s", value / 1_000)
+        }
+        return String(format: "%.0f b/s", value)
     }
 
     public static func size(_ bytes: Double?) -> String {

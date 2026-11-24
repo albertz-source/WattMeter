@@ -517,6 +517,111 @@ public struct DiskChip: View {
     }
 }
 
+// MARK: - 内存 / 网络
+
+/// 内存 / 网络徽章
+public struct StatChip: View {
+    public enum Kind {
+        case memory, down, up, link
+    }
+
+    let kind: Kind
+    let label: String
+    let value: String
+    let detail: String?
+
+    public init(kind: Kind, label: String = "", value: String, detail: String? = nil) {
+        self.kind = kind
+        self.label = label
+        self.value = value
+        self.detail = detail
+    }
+
+    private var icon: String {
+        switch kind {
+        case .memory: return "memorychip"
+        case .down: return "arrow.down"
+        case .up: return "arrow.up"
+        case .link: return "bolt.horizontal.circle"
+        }
+    }
+
+    private var tint: Color {
+        switch kind {
+        case .memory: return Palette.purple
+        case .down: return Palette.mint
+        case .up: return Palette.amber
+        case .link: return Palette.blue
+        }
+    }
+
+    public var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(tint.opacity(0.9))
+            if !label.isEmpty {
+                Text(label)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            Text(value)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.9))
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(tint.opacity(0.10)))
+    }
+}
+
+/// 面板里的内存 / 网络条
+public struct SystemStrip: View {
+    public enum Style {
+        case compact, detailed
+    }
+
+    let reading: PowerReading?
+    let style: Style
+
+    public init(reading: PowerReading?, style: Style = .compact) {
+        self.reading = reading
+        self.style = style
+    }
+
+    public var body: some View {
+        if let r = reading, r.memoryUsedShare != nil || r.hasNetwork {
+            HStack(spacing: 6) {
+                if r.memoryUsedShare != nil {
+                    StatChip(kind: .memory,
+                             label: L("内存"),
+                             value: r.memoryUsedPercentText,
+                             detail: style == .detailed ? r.memoryText : nil)
+                }
+                if r.hasNetwork {
+                    StatChip(kind: .down, value: r.netInText)
+                    StatChip(kind: .up, value: r.netOutText)
+                    if r.netLinkBps != nil {
+                        StatChip(kind: .link,
+                                 label: style == .detailed ? L("连接") : "",
+                                 value: r.netLinkText,
+                                 detail: style == .detailed ? r.netPrimaryInterface : nil)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .lineLimit(1)
+        }
+    }
+}
+
 /// 磁盘条：读 / 写速率 + 可用空间，以及 SSD SMART 的累计读写与健康度。
 /// - compact：面板用，SSD 一行小字
 /// - detailed：主窗口用，SSD 用独立徽章展示

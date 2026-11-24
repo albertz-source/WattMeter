@@ -49,6 +49,32 @@ public enum Diagnostics {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - 内存 / 网络
+
+    public static func systemResources() -> String {
+        let reader = PowerReader()
+        _ = reader.read()                 // 第一次建立速率基线
+        usleep(1_000_000)
+        guard let r = reader.read() else { return "读取失败：没有可用数据" }
+        var lines: [String] = ["== 内存 / 网络（1 秒窗口） =="]
+        lines.append("内存: \(r.memoryText)  使用率 \(r.memoryUsedPercentText)")
+        func gb(_ v: Double?) -> String {
+            guard let v, v.isFinite else { return "—" }
+            return String(format: "%.1f GB", v / 1_000_000_000)
+        }
+        lines.append("  App \(gb(r.memoryAppBytes)) · Wired \(gb(r.memoryWiredBytes))"
+                     + " · Compressed \(gb(r.memoryCompressedBytes))"
+                     + " · 交换 \(r.swapText ?? "0 B")")
+        if let iface = r.netPrimaryInterface {
+            lines.append("网络: \(iface)  连接速率 \(r.netLinkText)"
+                         + "  ↓ \(r.netInText)  ↑ \(r.netOutText)")
+        } else {
+            lines.append("网络: 没有可用的 en* 接口")
+        }
+        lines.append("开机以来: 流入 \(r.netInTotalText) · 流出 \(r.netOutTotalText)")
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - SSD SMART
 
     public static func ssd() -> String {

@@ -65,7 +65,7 @@ public struct MainWindowView: View {
                                     onSelect: { store.setWindow($0) }
                                 )
                             }
-                            SourceAreaChart(readings: samples, height: 168)
+                            SourceAreaChart(readings: samples, height: 150)
                         }
                     }
                     Card(title: L("整机功耗 / 电池净功率")) {
@@ -189,9 +189,6 @@ public struct MainWindowView: View {
                     powerRow("clock", L("剩余时间"), L("系统估计"),
                              localizedTimeRemaining(store.latest?.timeRemainingMinutes), nil, Palette.blue)
                     Divider().opacity(0.18)
-                    powerRow("square.split.2x1", L("来源占比"), L("电源 / 电池"),
-                             batteryShareText, nil, Palette.blue)
-                    Divider().opacity(0.18)
                     powerRow("heart.text.square.fill", L("电池健康"), healthCaption,
                              store.latest?.batteryHealthText ?? "—", nil, Palette.amber)
                 }
@@ -218,12 +215,27 @@ public struct MainWindowView: View {
                 }
             }
 
-            Spacer(minLength: 0)
+            Card(title: L("内存 / 网络")) {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let latest = store.latest {
+                        infoLine(L("内存"),
+                                 latest.memoryUsedPercentText,
+                                 detail: latest.memoryText
+                                     + (latest.swapText.map { " · " + L("交换") + " " + $0 } ?? ""))
+                        infoLine(L("网络"),
+                                 latest.hasNetwork ? "↓ " + latest.netInText + "  ↑ " + latest.netOutText : "—",
+                                 detail: nil)
+                        infoLine(L("连接"),
+                                 latest.netLinkText,
+                                 detail: latest.hasNetwork
+                                     ? L("开机以来") + " ↓ " + latest.netInTotalText
+                                         + " ↑ " + latest.netOutTotalText
+                                     : nil)
+                    }
+                }
+            }
 
-            Text(L("功率为系统内部测量值；墙插功率为估算值（DC 输入 + 适配器损耗），与插座功率计可能有 5–15% 差异。"))
-                .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.3))
-                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 
@@ -231,6 +243,27 @@ public struct MainWindowView: View {
 
 
 
+
+    /// 内存 / 网络卡片里的紧凑信息行
+    private func infoLine(_ label: String, _ value: String, detail: String? = nil) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.45))
+                .frame(width: 26, alignment: .leading)
+            Text(value)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.9))
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+    }
 
     /// 电池健康行副标题：满充 / 设计容量 · 循环次数
     private var healthCaption: String {

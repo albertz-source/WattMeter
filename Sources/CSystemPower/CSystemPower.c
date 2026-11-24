@@ -12,6 +12,12 @@
 #include <IOKit/IOCFPlugIn.h>
 #include <IOKit/IOBSD.h>
 #include <sys/mount.h>
+#include <sys/sysctl.h>
+#include <mach/host_info.h>
+#include <mach/vm_statistics.h>
+#include <net/route.h>
+#include <net/if.h>
+#include <net/if_var.h>
 #include <IOKit/ps/IOPowerSources.h>
 #include <IOKit/ps/IOPSKeys.h>
 #include <mach/mach.h>
@@ -430,6 +436,113 @@ static void cf_string(CFDictionaryRef d, CFStringRef k, char *buf, size_t len) {
     CFTypeRef v = CFDictionaryGetValue(d, k);
     if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
         CFStringGetCString((CFStringRef)v, buf, (CFIndex)len, kCFStringEncodingUTF8);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* 内存：host_statistics64 + sysctl                                   */
+/* ------------------------------------------------------------------ */
+
+static void read_memory_stats(SPReading *r) {
+    uint64_t total = 0;
+    size_t len = sizeof total;
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+    if (sysctl(mib, 2, &total, &len, NULL, 0) != 0 || total == 0) return;
+
+    vm_statistics64_data_t vm;
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
+                          (host_info64_t)&vm, &count) != KERN_SUCCESS) return;
+
+    vm_size_t pageSize = 0;
+    host_page_size(mach_host_self(), &pageSize);
+    int64_t page = (int64_t)pageSize;
+    if (page <= 0) page = 16384;
+
+    int64_t app = ((int64_t)vm.internal_page_count - (int64_t)vm.purgeable_count) * page;
+    if (app < 0) app = 0;
+    int64_t wired = (int64_t)vm.wire_count * page;
+    int64_t compressed = (int64_t)vm.compressor_page_count * page;
+    int64_t cached = ((int64_t)vm.external_page_count + (int64_t)vm.purgeable_count) * page;
+
+    r->memoryAvailable = 1;
+    r->memoryTotalBytes = (double)total;
+    r->memoryAppBytes = (double)app;
+    r->memoryWiredBytes = (double)wired;
+    r->memoryCompressedBytes = (double)compressed;
+    r->memoryCachedBytes = (double)cached;
+    r->memoryUsedBytes = (double)(app + wired + compressed);
+
+    struct xsw_usage swap;
+    memset(&swap, 0, sizeof swap);
+    size_t slen = sizeof swap;
+    int smib[2] = {CTL_VM, VM_SWAPUSAGE};
+    if (sysctl(smib, 2, &swap, &slen, NULL, 0) == 0) {
+        r->swapTotalBytes = (double)swap.xsu_total;
+        r->swapUsedBytes = (double)swap.xsu_used;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* 网络：sysctl(NET_RT_IFLIST2) 的 64 位接口计数器                      */
+/*                                                                     */
+/* 只统计 en*（以太网 / Wi-Fi），避免 utun / awdl / bridge 重复计数。      */
+/* ------------------------------------------------------------------ */
+
+static void read_network_stats(SPReading *r) {
+    int mib[6] = {CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0};
+    size_t len = 0;
+    if (sysctl(mib, 6, NULL, &len, NULL, 0) != 0 || len == 0) return;
+    char *buf = malloc(len);
+    if (!buf) return;
+    if (sysctl(mib, 6, buf, &len, NULL, 0) != 0) {
+        free(buf);
+        return;
+    }
+
+    unsigned long long inBytes = 0, outBytes = 0;
+    unsigned long long linkBps = 0, bestScore = 0;
+    char primary[IFNAMSIZ] = "";
+    int count = 0;
+
+    char *next = buf;
+    char *end = buf + len;
+    while (next < end) {
+        struct if_msghdr *ifm = (struct if_msghdr *)next;
+        if (ifm->ifm_type == RTM_IFINFO2 && ifm->ifm_msglen > 0) {
+            struct if_msghdr2 *if2 = (struct if_msghdr2 *)ifm;
+            char name[IFNAMSIZ] = {0};
+            if (if_indextoname(if2->ifm_index, name) && strncmp(name, "en", 2) == 0 &&
+                !(if2->ifm_flags & IFF_LOOPBACK)) {
+                unsigned long long i = if2->ifm_data.ifi_ibytes;
+                unsigned long long o = if2->ifm_data.ifi_obytes;
+                unsigned long long baud = if2->ifm_data.ifi_baudrate;
+                int up = (if2->ifm_flags & IFF_UP) ? 1 : 0;
+                inBytes += i;
+                outBytes += o;
+                count++;
+                if (up && baud > 0) {
+                    /* 有流量的接口优先，其次比较链路速率 */
+                    unsigned long long score = (i + o > 0 ? (1ULL << 62) : 0) + baud;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        linkBps = baud;
+                        snprintf(primary, sizeof primary, "%s", name);
+                    }
+                }
+            }
+        }
+        next += ifm->ifm_msglen;
+    }
+    free(buf);
+
+    if (count > 0) {
+        r->networkAvailable = 1;
+        r->netInterfaceCount = count;
+        r->netInBytes = (double)inBytes;
+        r->netOutBytes = (double)outBytes;
+        r->netLinkBps = (double)linkBps;
+        snprintf(r->netPrimaryName, sizeof r->netPrimaryName, "%s", primary);
     }
 }
 
@@ -1408,6 +1521,9 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
     out->platformTempC = NAN;
     out->socPercent = -1.0;
     out->timeRemainingMinutes = -1.0;
+    out->memoryTotalBytes = 0;
+    out->swapTotalBytes = -1;
+    out->swapUsedBytes = -1;
     out->batteryDesignCapacity_mAh = -1.0;
     out->batteryFullChargeCapacity_mAh = -1.0;
     out->batteryCycleCount = -1;
@@ -1548,6 +1664,8 @@ int32_t sp_reader_read(SPReader *reader, SPReading *out) {
     read_smart_battery(out);
     read_disk_stats(out);
     read_nvme_smart(reader, out);
+    read_memory_stats(out);
+    read_network_stats(out);
     read_iops(out);
 
     return 0;

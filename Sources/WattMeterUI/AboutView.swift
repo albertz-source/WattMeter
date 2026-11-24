@@ -169,7 +169,10 @@ public struct AboutView: View {
     private var footer: some View {
         HStack(spacing: 10) {
             Button {
-                let text = "WattMeter v\(version) (\(build))\n" + Diagnostics.battery() + "\n\n" + Diagnostics.fans()
+                let text = "WattMeter v\(version) (\(build))\n" + Diagnostics.battery()
+                    + "\n\n" + Diagnostics.systemResources()
+                    + "\n\n" + Diagnostics.ssd()
+                    + "\n\n" + Diagnostics.fans()
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
                 pasteboard.setString(text, forType: .string)

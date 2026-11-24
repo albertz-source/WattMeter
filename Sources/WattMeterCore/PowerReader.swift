@@ -14,6 +14,8 @@ public final class PowerReader {
     private var lastDiskSample: (read: Double, write: Double, at: Date)?
     /// 启动卷容量缓存（statfs 不必每秒都做）
     private var cachedVolume: (free: Double?, total: Double?, at: Date)?
+    /// 网络计数器上一次的采样值（累计字节数 → B/s）
+    private var lastNetSample: (inBytes: Double, outBytes: Double, at: Date)?
 
     public init() {
         handle = sp_reader_create()
@@ -191,8 +193,25 @@ public final class PowerReader {
         let fanMin: Double? = raw.fanAvailable != 0 && raw.fanMinRPM > 0 ? raw.fanMinRPM : nil
         let fanMax: Double? = raw.fanAvailable != 0 && raw.fanMaxRPM > 0 ? raw.fanMaxRPM : nil
 
-        // ── 磁盘 I/O：累计字节数 → 每秒速率 ──────────────────────────
         let now = Date()
+
+        // ── 网络：累计字节数 → 每秒速率 ──────────────────────────────
+        var netInRate: Double?
+        var netOutRate: Double?
+        if raw.networkAvailable != 0 {
+            if let last = lastNetSample {
+                let elapsed = now.timeIntervalSince(last.at)
+                if elapsed > 0.2, elapsed < 10 {
+                    netInRate = max(0, raw.netInBytes - last.inBytes) / elapsed
+                    netOutRate = max(0, raw.netOutBytes - last.outBytes) / elapsed
+                }
+            }
+            lastNetSample = (raw.netInBytes, raw.netOutBytes, now)
+        } else {
+            lastNetSample = nil
+        }
+
+        // ── 磁盘 I/O：累计字节数 → 每秒速率 ──────────────────────────
         var diskReadRate: Double?
         var diskWriteRate: Double?
         if raw.diskAvailable != 0 {
@@ -261,6 +280,21 @@ public final class PowerReader {
             fanMinRPM: fanMin,
             fanMaxRPM: fanMax,
             fanTargetRPM: fanTarget,
+            memoryTotalBytes: raw.memoryAvailable != 0 && raw.memoryTotalBytes > 0
+                ? raw.memoryTotalBytes : nil,
+            memoryUsedBytes: raw.memoryAvailable != 0 ? raw.memoryUsedBytes : nil,
+            memoryAppBytes: raw.memoryAvailable != 0 ? raw.memoryAppBytes : nil,
+            memoryWiredBytes: raw.memoryAvailable != 0 ? raw.memoryWiredBytes : nil,
+            memoryCompressedBytes: raw.memoryAvailable != 0 ? raw.memoryCompressedBytes : nil,
+            swapUsedBytes: raw.swapUsedBytes >= 0 ? raw.swapUsedBytes : nil,
+            swapTotalBytes: raw.swapTotalBytes >= 0 ? raw.swapTotalBytes : nil,
+            netInBytesPerSec: netInRate,
+            netOutBytesPerSec: netOutRate,
+            netInBytesTotal: raw.networkAvailable != 0 ? raw.netInBytes : nil,
+            netOutBytesTotal: raw.networkAvailable != 0 ? raw.netOutBytes : nil,
+            netLinkBps: raw.networkAvailable != 0 && raw.netLinkBps > 0 ? raw.netLinkBps : nil,
+            netPrimaryInterface: raw.networkAvailable != 0 && !raw.netPrimaryNameString.isEmpty
+                ? raw.netPrimaryNameString : nil,
             ssdModel: raw.ssdSmartAvailable != 0 && !raw.ssdModelString.isEmpty ? raw.ssdModelString : nil,
             ssdPercentUsed: raw.ssdSmartAvailable != 0 ? raw.ssdPercentUsed : nil,
             ssdAvailableSpare: raw.ssdSmartAvailable != 0 ? raw.ssdAvailableSpare : nil,
@@ -444,6 +478,13 @@ private extension SPReading {
     /// 读取 C 结构里的定长字符串
     var adapterNameString: String {
         withUnsafeBytes(of: adapterName) { buffer in
+            guard let base = buffer.baseAddress else { return "" }
+            return String(cString: base.assumingMemoryBound(to: CChar.self))
+        }
+    }
+
+    var netPrimaryNameString: String {
+        withUnsafeBytes(of: netPrimaryName) { buffer in
             guard let base = buffer.baseAddress else { return "" }
             return String(cString: base.assumingMemoryBound(to: CChar.self))
         }

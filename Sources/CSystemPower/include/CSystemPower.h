@@ -77,6 +77,25 @@ typedef struct SPReading {
     double  anePowerW;
     double  dramPowerW;
 
+    /* ---- 内存（host_statistics64 + sysctl） ---- */
+    int32_t memoryAvailable;
+    double  memoryTotalBytes;
+    double  memoryUsedBytes;      // App + Wired + Compressed
+    double  memoryAppBytes;
+    double  memoryWiredBytes;
+    double  memoryCompressedBytes;
+    double  memoryCachedBytes;    // 可回收（external + purgeable）
+    double  swapTotalBytes;
+    double  swapUsedBytes;
+
+    /* ---- 网络（sysctl NET_RT_IFLIST2，累计字节数） ---- */
+    int32_t networkAvailable;
+    int32_t netInterfaceCount;    // 参与统计的 en* 接口数
+    double  netInBytes;           // 开机以来累计流入
+    double  netOutBytes;          // 开机以来累计流出
+    double  netLinkBps;           // 连接速率（bit/s），0 表示未知
+    char    netPrimaryName[16];   // 主用接口名（en0 / en1 …）
+
     /* ---- SSD SMART（NVMe log page 0x02，用户态可读，不需要 root） ---- */
     int32_t ssdSmartAvailable;
     char    ssdModel[64];          // Model Number
